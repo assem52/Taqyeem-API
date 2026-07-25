@@ -1,6 +1,5 @@
 import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-// CHECK: confirm PrismaService is the actual exported name/path.
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ScoreEventsService } from './events/score-events.service';
 import { AttemptAnswers, computeScore, QuestionSnapshotItem, ScoreResult } from './scoring';
@@ -38,6 +37,7 @@ export class AttemptScoringService {
       throw new ConflictException('Cannot change answers after submission');
     }
   }
+
   async submitAttempt(attemptId: string): Promise<ScoreResult> {
     let result: SubmitResult;
     try {
@@ -58,6 +58,7 @@ export class AttemptScoringService {
       );
     } catch (error) {
       if (this.isTransactionTimeout(error)) {
+    
         throw new ServiceUnavailableException(
           'Submission is taking longer than expected. Please try submitting again.',
         );
@@ -105,7 +106,7 @@ export class AttemptScoringService {
     }));
 
     const answers = (attempt.attemptAnswers ?? {}) as unknown as AttemptAnswers;
-  
+
     const passScorePercentage = attempt.quiz.passScore != null ? attempt.quiz.passScore.toNumber() : null;
 
     const score = computeScore(questionSnapshot, answers, {
@@ -123,6 +124,7 @@ export class AttemptScoringService {
 
     return { score, freshlyScored: true, studentId: attempt.studentId, quizId: attempt.quizId };
   }
+
   private async readAlreadySubmitted(tx: Prisma.TransactionClient, attemptId: string): Promise<SubmitResult> {
     const existing = await tx.attempt.findUnique({
       where: { id: attemptId },
