@@ -2,12 +2,10 @@
 generator client {
   provider = "prisma-client-js"
 }
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-
 model Student {
   id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name        String
@@ -16,7 +14,6 @@ model Student {
   enrollments Enrollment[]
   attempts    Attempt[]
 }
-
 model Attempt { 
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   quizId    String   @db.Uuid
@@ -28,19 +25,16 @@ model Attempt {
   status      AttemptStatus @default(IN_PROGRESS)
   attemptAnswers     Json?        @db.JsonB
   score       Decimal?
-
+  questionSnapshot   Json?        @db.JsonB
   @@unique([quizId, studentId])
 }
-
 model Enrollment {
   quizId      String           @db.Uuid
   studentId   String           @db.Uuid
   quiz        Quiz             @relation(fields: [quizId], references: [id], onDelete: Cascade)
   student     Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
-
   @@unique([quizId, studentId])
 }
-
 model Quiz {
   id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   title       String
@@ -55,7 +49,6 @@ model Quiz {
   enrollments Enrollment[]
   attempts    Attempt[]
 }
-
 model Question {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   quizId    String   @db.Uuid
@@ -80,7 +73,6 @@ model QuizOption {
   option    String
   isCorrect Boolean  @default(false)
 }
-
 model Document {
   id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   title       String
@@ -93,11 +85,9 @@ model Document {
   updatedAt   DateTime   @updatedAt @map("updated_at")
   
   chunks      Chunk[]
-
   @@unique([source, title])
   @@map("documents")
 }
-
 model Chunk {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   documentId   String   @db.Uuid
@@ -109,25 +99,20 @@ model Chunk {
   metadata     Json?    @db.JsonB
   
   document     Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-
   @@unique([documentId, chunkIndex])
   @@index([contentHash])
   @@index([documentId])
   @@map("chunks")
 }
-
-
 enum StudentStatus {
   VERIFIED  
   UNVERIFIED
 }
-
 enum QuizStatus {
   DRAFT
   PUBLISHED
   ARCHIVED
 }
-
 enum SourceType {
   FAQ
   ONBOARDING
@@ -135,7 +120,6 @@ enum SourceType {
   PROGRAM_DOC
   OTHER
 }
-
 enum AttemptStatus {
   IN_PROGRESS
   SUBMITTED
