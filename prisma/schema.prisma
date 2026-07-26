@@ -88,6 +88,14 @@ model Document {
   @@unique([source, title])
   @@map("documents")
 }
+model Extension {
+     id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+     name      String   @unique
+     createdAt DateTime @default(now()) @map("created_at")
+     updatedAt DateTime @updatedAt @map("updated_at")
+
+     @@map("extensions")
+   }
 model Chunk {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   documentId   String   @db.Uuid
