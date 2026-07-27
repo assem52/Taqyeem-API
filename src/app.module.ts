@@ -8,7 +8,7 @@ import { IngestionModule } from './modules/ingestion/ingestion.module';
 import { SearchModule } from './modules/search/dto/search.module';
 import { StudentQuizzesModule } from './modules/student-quizzes/student-quizzes.module';
 import { AdminQuizzesModule } from './modules/admin-quizzes/admin-quizzes.module';
-import { AdminFollowUpModule } from './admin-follow-up/admin-follow-up.module';
+import { AdminFollowUpModule } from './modules/admin-follow-up/admin-follow-up.module';
 
 @Module({
   imports: [

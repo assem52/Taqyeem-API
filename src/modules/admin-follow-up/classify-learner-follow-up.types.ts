@@ -35,6 +35,14 @@ export const FOLLOW_UP_NEXT_STEPS: Record<FollowUpReason, string> = {
     'Review attempt details for administrative follow-up',
 };
 
+export const FOLLOW_UP_LABELS: Record<FollowUpReason, string> = {
+  [FollowUpReason.DID_NOT_START]: 'Did not start',
+  [FollowUpReason.STARTED_NOT_SUBMITTED]: 'Started but did not submit',
+  [FollowUpReason.FAILED]: 'Failed',
+  [FollowUpReason.FLAGGED_FOR_REVIEW]: 'Flagged for review',
+  [FollowUpReason.LOW_SCORE]: 'Low score',
+};
+
 export const FOLLOW_UP_GROUP_ORDER: FollowUpReason[] = [
   FollowUpReason.FLAGGED_FOR_REVIEW,
   FollowUpReason.STARTED_NOT_SUBMITTED,

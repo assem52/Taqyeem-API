@@ -1,20 +1,20 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { AdminGuard } from '../admin-quizzes/guards/admin.guard';
 import { AdminFollowUpService } from './admin-follow-up.service';
-import { CreateAdminFollowUpDto } from './dto/create-admin-follow-up.dto';
-import { UpdateAdminFollowUpDto } from './dto/update-admin-follow-up.dto';
+import {
+  FollowUpListDto,
+  FollowUpListQueryDto,
+} from './dto/follow-up-list.dto';
 
-@Controller('admin-follow-up')
+@Controller('admin/follow-up')
+@UseGuards(AdminGuard)
 export class AdminFollowUpController {
   constructor(private readonly adminFollowUpService: AdminFollowUpService) {}
 
   @Get()
-  findAll() {
-    return this.adminFollowUpService.findAll();
+  getFollowUpList(
+    @Query() query: FollowUpListQueryDto,
+  ): Promise<FollowUpListDto> {
+    return this.adminFollowUpService.getFollowUpList(query.quizId);
   }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.adminFollowUpService.findOne(+id);
-  }
-
 }

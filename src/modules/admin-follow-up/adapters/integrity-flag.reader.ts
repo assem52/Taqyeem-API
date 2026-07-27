@@ -7,6 +7,8 @@ export interface IntegrityFlag {
   reviewNote?: string;
 }
 
+export const INTEGRITY_FLAG_READER = Symbol('INTEGRITY_FLAG_READER');
+
 export interface IntegrityFlagReader {
   getFlag(studentId: string, quizId: string): IntegrityFlag | null;
 }
