@@ -4,6 +4,7 @@
 @invalidDraftId = 33333333-3333-3333-3333-333333333333
 @emptyDraftId = 44444444-4444-4444-4444-444444444444
 @inProgressQuizId = 55555555-5555-5555-5555-555555555555
+@followUpDemoQuizId = 66666666-6666-6666-6666-666666666666
 
 ############################################
 # Sprint 1 — Student dashboard
@@ -54,3 +55,17 @@ Content-Type: application/json
 {
   "duration": 90
 }
+
+############################################
+# Sprint 3 — Admin learner follow-up list
+# Run: npx prisma db seed  (then npm run start:dev)
+############################################
+
+### Admin: all follow-ups across published quizzes
+GET {{baseUrl}}/admin/follow-up
+
+### Admin: follow-ups for demo quiz (expect five groups, one learner each)
+GET {{baseUrl}}/admin/follow-up?quizId={{followUpDemoQuizId}}
+
+### Admin: invalid quiz filter (expect 400)
+GET {{baseUrl}}/admin/follow-up?quizId=not-a-uuid
