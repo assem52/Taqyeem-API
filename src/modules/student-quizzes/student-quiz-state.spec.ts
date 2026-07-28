@@ -9,6 +9,16 @@ describe('deriveStudentState', () => {
     expect(deriveStudentState(undefined, openDate, closeDate, now)).toBe('Not open yet');
   });
 
+  it('is "Not open yet" for an IN_PROGRESS attempt before the open date', () => {
+    const now = new Date('2025-12-31T23:59:59Z');
+    const state = deriveStudentState({ status: 'IN_PROGRESS' }, openDate, closeDate, now);
+    expect(state).toBe('Not open yet');
+
+    const access = resolveAccess('VERIFIED', state, openDate, closeDate);
+    expect(access.canStart).toBe(false);
+    expect(access.blockedReason).toContain(openDate.toISOString());
+  });
+
   it('is "Not started" inside the window with no attempt', () => {
     const now = new Date('2026-01-15T00:00:00Z');
     expect(deriveStudentState(undefined, openDate, closeDate, now)).toBe('Not started');
