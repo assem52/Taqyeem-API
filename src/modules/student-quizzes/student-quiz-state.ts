@@ -16,24 +16,33 @@ export interface AccessResult {
   canStart: boolean;
   blockedReason?: string;
 }
+
 export function deriveStudentState(
   attempt: AttemptLike | undefined,
   openDate: Date,
   closeDate: Date,
   now: Date,
 ): StudentQuizState {
+  // 1. Submitted status always takes highest priority
   if (attempt?.status === 'SUBMITTED' || attempt?.status === 'AUTO_SUBMITTED') {
     return 'Submitted';
   }
+
+  // 2. Time-window bounds take precedence over IN_PROGRESS to prevent bypasses
   if (now > closeDate) {
     return 'Closed';
   }
-  if (attempt?.status === 'IN_PROGRESS') {
-    return 'In progress';
-  }
+
   if (now < openDate) {
     return 'Not open yet';
   }
+
+  // 3. Live attempt within open window
+  if (attempt?.status === 'IN_PROGRESS') {
+    return 'In progress';
+  }
+
+  // 4. Default open state
   return 'Not started';
 }
 
