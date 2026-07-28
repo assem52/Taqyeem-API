@@ -1,11 +1,16 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Attempt, AttemptStatus, StudentStatus } from '@prisma/client';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   StudentQuizDashboardDto,
   StudentQuizDashboardDtoItem,
-  StudentQuizState,
 } from './dto/student-quiz-dashboard.dto';
+import { deriveStudentState, resolveAccess } from './student-quiz-state';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 @Injectable()
 export class StudentQuizzesService {
@@ -15,7 +20,6 @@ export class StudentQuizzesService {
     const student = await this.prisma.student.findUnique({
       where: { id: studentId },
     });
-
     if (!student) {
       throw new NotFoundException('Student not found');
     }
@@ -27,36 +31,36 @@ export class StudentQuizzesService {
       },
       include: { quiz: true },
     });
-
     const attempts = await this.prisma.attempt.findMany({
       where: { studentId },
     });
-
     const attemptByQuizId = new Map(
       attempts.map((attempt) => [attempt.quizId, attempt]),
     );
-
     const now = new Date();
 
     const quizzes: StudentQuizDashboardDtoItem[] = enrollments.map(
       (enrollment) => {
         const { quiz } = enrollment;
         const attempt = attemptByQuizId.get(quiz.id);
-        const studentState = this.deriveStudentState(
+        const studentState = deriveStudentState(
           attempt,
+          quiz.openDate,
           quiz.closesAt,
           now,
         );
-        const { canStart, blockedReason } = this.resolveAccess(
+        const { canStart, blockedReason } = resolveAccess(
           student.status,
           studentState,
+          quiz.openDate,
           quiz.closesAt,
         );
-
         return {
           quizId: quiz.id,
           title: quiz.title,
           description: quiz.description ?? '',
+          durationMinutes: quiz.duration,
+          opensAt: quiz.openDate.toISOString(),
           closesAt: quiz.closesAt.toISOString(),
           studentState,
           score: attempt?.score != null ? Number(attempt.score) : null,
@@ -66,58 +70,70 @@ export class StudentQuizzesService {
       },
     );
 
-    return { quizzes };
+    return {
+      quizzes,
+      message:
+        quizzes.length === 0
+          ? "You don't have any quizzes yet. Check back after you've been invited to one."
+          : undefined,
+    };
   }
 
-  private deriveStudentState(
-    attempt: Attempt | undefined,
-    closeDate: Date,
-    now: Date,
-  ): StudentQuizState {
-    if (
-      attempt?.status === AttemptStatus.SUBMITTED ||
-      attempt?.status === AttemptStatus.AUTO_SUBMITTED
-    ) {
-      return 'Submitted';
+  async getQuizAccess(
+    studentId: string,
+    quizId: string,
+  ): Promise<StudentQuizDashboardDtoItem> {
+    const student = await this.prisma.student.findUnique({
+      where: { id: studentId },
+    });
+    if (!student) {
+      throw new NotFoundException('Student not found');
     }
 
-    if (now > closeDate) {
-      return 'Closed';
+    if (!UUID_RE.test(quizId)) {
+      throw new NotFoundException('This quiz link is invalid.');
     }
 
-    if (attempt?.status === AttemptStatus.IN_PROGRESS) {
-      return 'In progress';
+    const quiz = await this.prisma.quiz.findUnique({ where: { id: quizId } });
+    if (!quiz || quiz.status !== 'PUBLISHED') {
+      throw new NotFoundException('This quiz link is invalid.');
     }
 
-    return 'Not started';
-  }
-
-  private resolveAccess(
-    studentStatus: StudentStatus,
-    studentState: StudentQuizState,
-    closeDate: Date,
-  ): { canStart: boolean; blockedReason?: string } {
-    if (studentStatus === StudentStatus.UNVERIFIED) {
-      return {
-        canStart: false,
-        blockedReason: 'Verify your email before starting this quiz.',
-      };
+    const enrollment = await this.prisma.enrollment.findUnique({
+      where: { quizId_studentId: { quizId, studentId } },
+    });
+    if (!enrollment) {
+      throw new ForbiddenException('You have not been invited to this quiz.');
     }
 
-    if (studentState === 'Closed') {
-      return {
-        canStart: false,
-        blockedReason: `This quiz closed on ${closeDate.toISOString()}.`,
-      };
-    }
+    const attempt = await this.prisma.attempt.findUnique({
+      where: { quizId_studentId: { quizId, studentId } },
+    });
+    const now = new Date();
+    const studentState = deriveStudentState(
+      attempt ?? undefined,
+      quiz.openDate,
+      quiz.closesAt,
+      now,
+    );
+    const { canStart, blockedReason } = resolveAccess(
+      student.status,
+      studentState,
+      quiz.openDate,
+      quiz.closesAt,
+    );
 
-    if (studentState === 'Submitted') {
-      return {
-        canStart: false,
-        blockedReason: 'You have already submitted this quiz.',
-      };
-    }
-
-    return { canStart: true };
+    return {
+      quizId: quiz.id,
+      title: quiz.title,
+      description: quiz.description ?? '',
+      durationMinutes: quiz.duration,
+      opensAt: quiz.openDate.toISOString(),
+      closesAt: quiz.closesAt.toISOString(),
+      studentState,
+      score: attempt?.score != null ? Number(attempt.score) : null,
+      canStart,
+      blockedReason,
+    };
   }
 }
