@@ -27,6 +27,7 @@ model Attempt {
   score       Decimal?
   questionSnapshot   Json?        @db.JsonB
   @@unique([quizId, studentId])
+integrityEvents IntegrityEvent[]
 }
 model Enrollment {
   quizId      String           @db.Uuid
@@ -48,6 +49,7 @@ model Quiz {
   questions   Question[]
   enrollments Enrollment[]
   attempts    Attempt[]
+integrityThreshold Int @default(5) @map("integrity_threshold")
 }
 model Question {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -111,6 +113,18 @@ model Chunk {
   @@index([contentHash])
   @@index([documentId])
   @@map("chunks")
+}
+model IntegrityEvent {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  attemptId   String             @db.Uuid
+  attempt     Attempt            @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  type        IntegrityEventType @default(VISIBILITY_LOST)
+  occurredAt  DateTime           @default(now()) @map("occurred_at")
+
+  @@index([attemptId])
+}
+enum IntegrityEventType {
+  VISIBILITY_LOST
 }
 enum StudentStatus {
   VERIFIED  
