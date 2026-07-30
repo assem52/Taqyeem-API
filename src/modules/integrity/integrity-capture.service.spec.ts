@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { IntegrityCaptureService } from './integrity-capture.service';
-import { PrismaService } from '../prisma/prisma.service';
-
+import { PrismaService } from '../../prisma/prisma.service';
 describe('IntegrityCaptureService', () => {
   let service: IntegrityCaptureService;
   let prisma: PrismaService;
