@@ -55,6 +55,7 @@ model Quiz {
   status             QuizStatus   @default(DRAFT)
   questions          Question[]
   enrollments        Enrollment[]
+  invitations        Invitation[]
   attempts           Attempt[]
   integrityThreshold Int          @default(5) @map("integrity_threshold")
 }
@@ -137,6 +138,36 @@ model IntegrityEvent {
 
   @@index([attemptId])
 }
+
+// NOTE: Slot 3 (Invitations) and Slot 6 (email logs) don't exist in the repo
+// yet. These are minimal models to unblock the follow-up dashboard.
+model Invitation {
+  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quizId    String     @db.Uuid
+  quiz      Quiz       @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  email     String
+  invitedAt DateTime   @default(now()) @map("invited_at")
+  emailLogs EmailLog[]
+
+  @@index([quizId, email])
+}
+
+model EmailLog {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  invitationId String         @db.Uuid
+  invitation   Invitation     @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+  status       EmailLogStatus @default(SENT)
+  occurredAt   DateTime       @default(now()) @map("occurred_at")
+  errorMessage String?        @map("error_message")
+
+  @@index([invitationId])
+}
+
+enum EmailLogStatus {
+  SENT
+  FAILED
+}
+
 
 enum IntegrityEventType {
   VISIBILITY_LOST
