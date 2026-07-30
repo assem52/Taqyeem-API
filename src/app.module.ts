@@ -10,6 +10,7 @@ import { StudentQuizzesModule } from './modules/student-quizzes/student-quizzes.
 import { AdminQuizzesModule } from './modules/admin-quizzes/admin-quizzes.module';
 import { AdminFollowUpModule } from './modules/admin-follow-up/admin-follow-up.module';
 import { IntegrityModule } from './modules/integrity/integrity.module';
+import { InvitationsModule } from './modules/invitations/invitations.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -25,6 +26,7 @@ import { IntegrityModule } from './modules/integrity/integrity.module';
     AdminQuizzesModule,
     AdminFollowUpModule,
     IntegrityModule,
+    InvitationsModule,
   ],
 })
 export class AppModule {}
