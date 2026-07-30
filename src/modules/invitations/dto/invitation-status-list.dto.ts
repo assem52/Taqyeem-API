@@ -1,8 +1,7 @@
-import { IsOptional, IsUUID } from 'class-validator';
+import {IsUUID } from 'class-validator';
 import { InvitationStatus } from '../invitation-status.types';
 
 export class InvitationStatusListQueryDto {
-  @IsOptional()
   @IsUUID()
   quizId?: string;
 }
