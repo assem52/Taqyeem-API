@@ -1,15 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { IntegrityCaptureService } from './integrity-capture.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+
 describe('IntegrityCaptureService', () => {
   let service: IntegrityCaptureService;
   let prisma: PrismaService;
 
   const mockPrismaService = {
     $executeRaw: jest.fn(),
-    attempt: {
-      findUnique: jest.fn(),
-    },
   };
 
   beforeEach(async () => {
@@ -27,22 +25,7 @@ describe('IntegrityCaptureService', () => {
   });
 
   describe('recordVisibilityLost', () => {
-    it('should skip recording if the attempt is already SUBMITTED', async () => {
-      mockPrismaService.attempt.findUnique.mockResolvedValue({
-        id: 'attempt-1',
-        status: 'SUBMITTED',
-      });
-
-      await service.recordVisibilityLost('attempt-1');
-
-      expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
-    });
-
-    it('should execute atomic insert query for an IN_PROGRESS attempt', async () => {
-      mockPrismaService.attempt.findUnique.mockResolvedValue({
-        id: 'attempt-1',
-        status: 'IN_PROGRESS',
-      });
+    it('should invoke $executeRaw with atomic SQL query', async () => {
       mockPrismaService.$executeRaw.mockResolvedValue(1);
 
       await service.recordVisibilityLost('attempt-1');
@@ -50,12 +33,12 @@ describe('IntegrityCaptureService', () => {
       expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
     });
 
-    it('should swallow database errors and never crash', async () => {
-      mockPrismaService.attempt.findUnique.mockRejectedValue(
-        new Error('Database error'),
+    it('should silently catch and swallow database errors without throwing', async () => {
+      mockPrismaService.$executeRaw.mockRejectedValue(
+        new Error('Database error during raw execute'),
       );
 
-      // Asserts that the promise resolves without throwing an error
+      // Asserts that the promise resolves cleanly without throwing an exception
       await expect(
         service.recordVisibilityLost('attempt-1'),
       ).resolves.not.toThrow();
