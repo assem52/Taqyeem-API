@@ -1,11 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 @Injectable()
 export class IntegrityCaptureService {
   private readonly logger = new Logger(IntegrityCaptureService.name);
+
   constructor(private readonly prisma: PrismaService) {}
-  
+
   async recordVisibilityLost(attemptId: string): Promise<void> {
     try {
       await this.prisma.$executeRaw`
@@ -23,10 +24,11 @@ export class IntegrityCaptureService {
         )
       `;
     } catch (error) {
-        this.logger.warn(
+      const stack = error instanceof Error ? error.stack : undefined;
+      this.logger.warn(
         `Failed to record visibility loss for attempt ${attemptId}`,
-        error?.stack,
-          );
+        stack,
+      );
     }
   }
 }
