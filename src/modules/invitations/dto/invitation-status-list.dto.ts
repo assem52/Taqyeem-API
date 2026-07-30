@@ -1,9 +1,9 @@
-import {IsUUID } from 'class-validator';
+import { IsUUID } from 'class-validator';
 import { InvitationStatus } from '../invitation-status.types';
 
 export class InvitationStatusListQueryDto {
   @IsUUID()
-  quizId?: string;
+  quizId: string;
 }
 
 export interface InvitationStatusRowDto {
