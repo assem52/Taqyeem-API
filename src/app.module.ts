@@ -9,7 +9,7 @@ import { SearchModule } from './modules/search/dto/search.module';
 import { StudentQuizzesModule } from './modules/student-quizzes/student-quizzes.module';
 import { AdminQuizzesModule } from './modules/admin-quizzes/admin-quizzes.module';
 import { AdminFollowUpModule } from './modules/admin-follow-up/admin-follow-up.module';
-
+import { IntegrityModule } from './modules/integrity/integrity.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -24,6 +24,7 @@ import { AdminFollowUpModule } from './modules/admin-follow-up/admin-follow-up.m
     StudentQuizzesModule,
     AdminQuizzesModule,
     AdminFollowUpModule,
+    IntegrityModule,
   ],
 })
 export class AppModule {}

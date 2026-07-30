@@ -1,5 +1,6 @@
 import {
   AttemptStatus,
+  IntegrityEventType,
   PrismaClient,
   QuestionType,
   QuizStatus,
@@ -265,6 +266,7 @@ async function main() {
       closesAt: weekFromNow,
       duration: 60,
       passScore: 50,
+      integrityThreshold: 5,
     },
   });
 
@@ -317,7 +319,7 @@ async function main() {
     },
   });
 
-  await prisma.attempt.create({
+  const eveAttempt = await prisma.attempt.create({
     data: {
       studentId: FLAGGED_EVE_ID,
       quizId: followUpDemoQuiz.id,
@@ -326,6 +328,19 @@ async function main() {
       score: 80,
     },
   });
+
+  // Seed 6 real IntegrityEvent rows for Eve, spaced 3s apart so each one
+  // falls outside the 2-second de-dupe window and actually inserts.
+  // eventCount (6) > quiz.integrityThreshold (5) => isAttemptFlagged === true
+  for (let i = 0; i < 6; i++) {
+    await prisma.integrityEvent.create({
+      data: {
+        attemptId: eveAttempt.id,
+        type: IntegrityEventType.VISIBILITY_LOST,
+        occurredAt: new Date(now.getTime() + i * 3000),
+      },
+    });
+  }
 
   await prisma.attempt.create({
     data: {
@@ -338,7 +353,6 @@ async function main() {
   });
 
   // Alice: no attempt → DID_NOT_START
-  // Eve: integrity flag via SeedIntegrityFlagAdapter (no DB table yet)
 
   console.log('Seed complete.');
   console.log(`MOCK_STUDENT_ID=${student.id}`);
@@ -347,7 +361,7 @@ async function main() {
   console.log(`EMPTY_DRAFT_QUIZ_ID=${emptyDraft.id}`);
   console.log(`IN_PROGRESS_QUIZ_ID=${inProgressQuiz.id}`);
   console.log(`FOLLOW_UP_DEMO_QUIZ_ID=${followUpDemoQuiz.id}`);
-  console.log('Follow-up demo expected: 1 did-not-start, 1 in-progress, 1 failed, 1 low-score, 1 flagged, 1 excluded');
+  console.log('Follow-up demo expected: 1 did-not-start, 1 in-progress, 1 failed, 1 low-score, 1 flagged (6 integrity events, threshold 5), 1 excluded');
 }
 
 main()
