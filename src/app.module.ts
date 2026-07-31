@@ -12,6 +12,7 @@ import { AdminQuizzesModule } from './modules/admin-quizzes/admin-quizzes.module
 import { AdminFollowUpModule } from './modules/admin-follow-up/admin-follow-up.module';
 import { IntegrityModule } from './modules/integrity/integrity.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -29,6 +30,7 @@ import { InvitationsModule } from './modules/invitations/invitations.module';
     AdminFollowUpModule,
     IntegrityModule,
     InvitationsModule,
+    AnalyticsModule,
   ],
   controllers:[],
   providers:[],
