@@ -8,11 +8,10 @@ export enum InvitationStatus {
   SENT = 'SENT',
   NOT_STARTED = 'NOT_STARTED',
 }
-
 export const PENDING_WINDOW_HOURS = 48;
 
 export interface SendEvent {
-  personKey: string;
+  email: string;
   status: 'SENT' | 'FAILED';
   occurredAt: Date;
 }
@@ -23,7 +22,7 @@ export interface PersonAttemptFacts {
 }
 
 export interface InvitationStatusRow {
-  personKey: string;
+  email: string;
   status: InvitationStatus;
 }
 
