@@ -12,6 +12,7 @@ function isTerminalAttempt(status: AttemptStatus): boolean {
     status === AttemptStatus.SUBMITTED || status === AttemptStatus.AUTO_SUBMITTED
   );
 }
+
 export function classifyInvitationStatus(
   hasSuccessfulSendWithinWindow: boolean,
   hasMostRecentSendFailed: boolean,
@@ -34,6 +35,7 @@ export function classifyInvitationStatus(
   }
   return InvitationStatus.NOT_STARTED;
 }
+
 export function deriveInvitationStatuses(
   invitedPeople: string[],
   sendEvents: SendEvent[],
@@ -42,13 +44,13 @@ export function deriveInvitationStatuses(
 ): InvitationStatusRow[] {
   const sendsByPerson = new Map<string, SendEvent[]>();
   for (const event of sendEvents) {
-    const list = sendsByPerson.get(event.personKey) ?? [];
+    const list = sendsByPerson.get(event.email) ?? [];
     list.push(event);
-    sendsByPerson.set(event.personKey, list);
+    sendsByPerson.set(event.email, list);
   }
 
-  return invitedPeople.map((personKey) => {
-    const sends = (sendsByPerson.get(personKey) ?? [])
+  return invitedPeople.map((email) => {
+    const sends = (sendsByPerson.get(email) ?? [])
       .slice()
       .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
 
@@ -59,13 +61,13 @@ export function deriveInvitationStatuses(
       now.getTime() - lastEvent.occurredAt.getTime() <=
         PENDING_WINDOW_HOURS * 60 * 60 * 1000;
 
-    const facts = attemptFactsByPerson.get(personKey) ?? {
+    const facts = attemptFactsByPerson.get(email) ?? {
       isRegisteredWithMatchingEmail: false,
       attemptStatus: null,
     };
 
     return {
-      personKey,
+      email,
       status: classifyInvitationStatus(
         hasSuccessfulSendWithinWindow,
         hasMostRecentSendFailed,

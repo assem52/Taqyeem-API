@@ -48,7 +48,7 @@ describe('AdminInvitationStatusService', () => {
     const result = await service.getInvitationStatus(quizId);
 
     expect(result.summary.total).toBe(3); // 'twice' deduped to one row
-    const byPerson = new Map(result.rows.map((r) => [r.personKey, r.status]));
+    const byPerson = new Map(result.rows.map((r) => [r.email, r.status]));
     expect(byPerson.get('twice@example.com')).toBe(InvitationStatus.NOT_STARTED);
     expect(byPerson.get('ghost@example.com')).toBe(InvitationStatus.NOT_STARTED);
     expect(byPerson.get('invited@example.com')).toBe(InvitationStatus.NOT_STARTED);
