@@ -2,12 +2,22 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  UnauthorizedException,
 } from '@nestjs/common';
 
-/** Placeholder until Auth slot wires real admin role checks. */
 @Injectable()
 export class AdminGuard implements CanActivate {
-  canActivate(_context: ExecutionContext): boolean {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest();
+    const providedToken = request.headers['x-admin-token'];
+    const expectedToken = process.env.ADMIN_API_TOKEN;
+
+    if (!expectedToken) {
+      throw new UnauthorizedException('Admin access is not configured.');
+    }
+    if (providedToken !== expectedToken) {
+      throw new UnauthorizedException('Invalid admin token.');
+    }
     return true;
   }
 }
