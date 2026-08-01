@@ -90,12 +90,12 @@ describe('deriveInvitationStatuses — dedup, time window, and aggregation', () 
     const invitedPeople = ['a@example.com'];
     const sendEvents: SendEvent[] = [
       {
-        personKey: 'a@example.com',
+        email: 'a@example.com',
         status: 'FAILED',
         occurredAt: new Date('2026-01-31T00:00:00Z'),
       },
       {
-        personKey: 'a@example.com',
+        email: 'a@example.com',
         status: 'SENT',
         occurredAt: new Date('2026-01-31T12:00:00Z'),
       },
@@ -104,7 +104,7 @@ describe('deriveInvitationStatuses — dedup, time window, and aggregation', () 
     const rows = deriveInvitationStatuses(invitedPeople, sendEvents, new Map(), NOW);
 
     expect(rows).toHaveLength(1);
-    expect(rows[0].status).toBe(InvitationStatus.SENT); // the later successful send wins
+    expect(rows[0].status).toBe(InvitationStatus.SENT);
   });
 
   it('BUGFIX: a success followed by a LATER failure still surfaces as failed', () => {
@@ -112,12 +112,12 @@ describe('deriveInvitationStatuses — dedup, time window, and aggregation', () 
       ['flaky@example.com'],
       [
         {
-          personKey: 'flaky@example.com',
+          email: 'flaky@example.com',
           status: 'SENT',
           occurredAt: new Date(NOW.getTime() - 10 * 60 * 60 * 1000),
         },
         {
-          personKey: 'flaky@example.com',
+          email: 'flaky@example.com',
           status: 'FAILED',
           occurredAt: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
         },
@@ -134,7 +134,7 @@ describe('deriveInvitationStatuses — dedup, time window, and aggregation', () 
       ['never-registered@example.com'],
       [
         {
-          personKey: 'never-registered@example.com',
+          email: 'never-registered@example.com',
           status: 'SENT',
           occurredAt: new Date('2026-01-31T12:00:00Z'),
         },
@@ -144,7 +144,7 @@ describe('deriveInvitationStatuses — dedup, time window, and aggregation', () 
     );
 
     expect(rows).toHaveLength(1);
-    expect(rows[0].status).toBe(InvitationStatus.SENT); // present, not dropped, not falsely accepted
+    expect(rows[0].status).toBe(InvitationStatus.SENT);
   });
 
   it('ACCEPTANCE: a person who registered with a different email appears as not_started once the send has aged out', () => {
@@ -152,12 +152,12 @@ describe('deriveInvitationStatuses — dedup, time window, and aggregation', () 
       ['invited@example.com'],
       [
         {
-          personKey: 'invited@example.com',
+          email: 'invited@example.com',
           status: 'SENT',
           occurredAt: new Date('2026-01-01T00:00:00Z'),
         },
       ],
-      new Map(), // no facts entry — the real registrant used a different email, so this key never got linked
+      new Map(),
       NOW,
     );
 
@@ -199,13 +199,13 @@ describe('deriveInvitationStatuses — dedup, time window, and aggregation', () 
 
     const rowsInside = deriveInvitationStatuses(
       ['p@example.com'],
-      [{ personKey: 'p@example.com', status: 'SENT', occurredAt: justInside }],
+      [{ email: 'p@example.com', status: 'SENT', occurredAt: justInside }],
       new Map(),
       NOW,
     );
     const rowsOutside = deriveInvitationStatuses(
       ['p@example.com'],
-      [{ personKey: 'p@example.com', status: 'SENT', occurredAt: justOutside }],
+      [{ email: 'p@example.com', status: 'SENT', occurredAt: justOutside }],
       new Map(),
       NOW,
     );
