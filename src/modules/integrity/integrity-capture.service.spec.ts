@@ -4,9 +4,9 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 
 describe('IntegrityCaptureService', () => {
   let service: IntegrityCaptureService;
-  let prisma: PrismaService;
 
   const mockPrismaService = {
+    attempt: { findUnique: jest.fn() },
     $executeRaw: jest.fn(),
   };
 
@@ -19,36 +19,78 @@ describe('IntegrityCaptureService', () => {
     }).compile();
 
     service = module.get<IntegrityCaptureService>(IntegrityCaptureService);
-    prisma = module.get<PrismaService>(PrismaService);
     jest.clearAllMocks();
   });
 
   describe('recordVisibilityLost', () => {
-    it('should invoke $executeRaw once with the IN_PROGRESS eligibility guard and the 2-second dedupe window', async () => {
+    it('SECURITY: returns "forbidden" when the claimed studentId does not own the attempt, and does not write a row', async () => {
+      mockPrismaService.attempt.findUnique.mockResolvedValue({
+        id: 'victim-attempt',
+        studentId: 'victim-student',
+        status: 'IN_PROGRESS',
+      });
+
+      const result = await service.recordVisibilityLost('victim-attempt', 'attacker-claims-this-id');
+
+      expect(result).toBe('forbidden');
+      expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
+    });
+
+    it('returns "ignored" (not "forbidden") for a submitted attempt, regardless of who claims it', async () => {
+      mockPrismaService.attempt.findUnique.mockResolvedValue({
+        id: 'attempt-1',
+        studentId: 'student-1',
+        status: 'SUBMITTED',
+      });
+
+      const result = await service.recordVisibilityLost('attempt-1', 'student-1');
+
+      expect(result).toBe('ignored');
+      expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
+    });
+
+    it('returns "ignored" for a nonexistent attempt', async () => {
+      mockPrismaService.attempt.findUnique.mockResolvedValue(null);
+      const result = await service.recordVisibilityLost('does-not-exist', 'student-1');
+      expect(result).toBe('ignored');
+    });
+
+    it('returns "accepted" and invokes the atomic insert when ownership matches', async () => {
+      mockPrismaService.attempt.findUnique.mockResolvedValue({
+        id: 'attempt-1',
+        studentId: 'student-1',
+        status: 'IN_PROGRESS',
+      });
       mockPrismaService.$executeRaw.mockResolvedValue(1);
 
-      await service.recordVisibilityLost('attempt-1');
+      const result = await service.recordVisibilityLost('attempt-1', 'student-1');
 
+      expect(result).toBe('accepted');
       expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
+
       const [sqlParts] = mockPrismaService.$executeRaw.mock.calls[0];
       const sql = Array.isArray(sqlParts) ? sqlParts.join('') : String(sqlParts);
       expect(sql).toContain('IN_PROGRESS');
+      expect(sql).toContain('"studentId" =');
       expect(sql).toContain('NOT EXISTS');
       expect(sql).toContain("INTERVAL '2 seconds'");
     });
 
-    it('should silently catch database errors, log a warning, and never throw', async () => {
+    it('returns "accepted" even when the DB insert fails and is swallowed — same label as a real write, by design', async () => {
+      mockPrismaService.attempt.findUnique.mockResolvedValue({
+        id: 'attempt-1',
+        studentId: 'student-1',
+        status: 'IN_PROGRESS',
+      });
       const warnSpy = jest
         .spyOn(service['logger'], 'warn')
         .mockImplementation(() => undefined);
-
       const dbError = new Error('Database error during raw execute');
       mockPrismaService.$executeRaw.mockRejectedValue(dbError);
 
-      await expect(
-        service.recordVisibilityLost('attempt-1'),
-      ).resolves.not.toThrow();
+      const result = await service.recordVisibilityLost('attempt-1', 'student-1');
 
+      expect(result).toBe('accepted');
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('attempt-1'),
