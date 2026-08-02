@@ -1,13 +1,22 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-} from '@nestjs/common';
+import { Injectable, ExecutionContext } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { Reflector } from '@nestjs/core';
 
-/** Placeholder until Auth slot wires real admin role checks. */
 @Injectable()
-export class AdminGuard implements CanActivate {
-  canActivate(_context: ExecutionContext): boolean {
-    return true;
+export class AdminGuard extends AuthGuard('jwt') {
+  constructor(private reflector: Reflector) {
+    super();
+  }
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const isAuthenticated = (await super.canActivate(context)) as boolean;
+    if (!isAuthenticated) {
+      return false;
+    }
+
+    const request = context.switchToHttp().getRequest();
+    const user = request.user;
+
+    return user && user.role === 'ADMIN';
   }
 }

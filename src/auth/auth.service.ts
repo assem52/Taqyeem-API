@@ -33,7 +33,6 @@ class AuthService {
       },
     });
 
-
     const { password, ...result } = user;
     return result;
   }
@@ -47,7 +46,6 @@ class AuthService {
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
     }
-
   
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
 
@@ -56,8 +54,11 @@ class AuthService {
     }
 
     const { password, ...result } = user;
+    const payload = { sub: user.id, role: user.role };
+    const access_token = this.jwtService.sign(payload);
     return {
       message: 'Logged in successfully',
+      access_token,
       user: result,
     };
   }

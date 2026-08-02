@@ -2,6 +2,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
 import { DocumentsModule } from './modules/documents/dto/documents.module';
 import { EmbeddingsModule } from './modules/embeddings/embeddings.module';
 import { IngestionModule } from './modules/ingestion/ingestion.module';
@@ -17,6 +18,7 @@ import { IntegrityModule } from './modules/integrity/integrity.module';
       envFilePath: '.env',
     }),
     PrismaModule,
+    AuthModule,
     DocumentsModule,
     EmbeddingsModule,
     IngestionModule,
@@ -26,5 +28,7 @@ import { IntegrityModule } from './modules/integrity/integrity.module';
     AdminFollowUpModule,
     IntegrityModule,
   ],
+  controllers:[],
+  providers:[],
 })
 export class AppModule {}
