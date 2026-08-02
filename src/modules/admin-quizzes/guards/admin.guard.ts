@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'crypto';
 import {
   CanActivate,
   ExecutionContext,
@@ -15,9 +16,17 @@ export class AdminGuard implements CanActivate {
     if (!expectedToken) {
       throw new UnauthorizedException('Admin access is not configured.');
     }
-    if (providedToken !== expectedToken) {
+
+    const provided = Buffer.from(String(providedToken ?? ''));
+    const expected = Buffer.from(expectedToken);
+
+    if (
+      provided.length !== expected.length ||
+      !timingSafeEqual(provided, expected)
+    ) {
       throw new UnauthorizedException('Invalid admin token.');
     }
+
     return true;
   }
 }
