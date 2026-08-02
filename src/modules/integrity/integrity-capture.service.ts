@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-export type CaptureResult = 'recorded' | 'ignored' | 'forbidden';
+export type CaptureResult = 'accepted' | 'ignored' | 'forbidden';
 
 @Injectable()
 export class IntegrityCaptureService {
@@ -13,6 +13,7 @@ export class IntegrityCaptureService {
     const attempt = await this.prisma.attempt.findUnique({ where: { id: attemptId } });
 
     if (!attempt || attempt.status !== 'IN_PROGRESS') {
+      // "Events for a submitted attempt are ignored silently" — unchanged.
       return 'ignored';
     }
     if (attempt.studentId !== studentId) {
@@ -43,6 +44,6 @@ export class IntegrityCaptureService {
         stack,
       );
     }
-    return 'recorded';
+    return 'accepted';
   }
 }

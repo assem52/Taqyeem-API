@@ -55,7 +55,7 @@ describe('IntegrityCaptureService', () => {
       expect(result).toBe('ignored');
     });
 
-    it('returns "recorded" and invokes the atomic insert when ownership matches', async () => {
+    it('returns "accepted" and invokes the atomic insert when ownership matches', async () => {
       mockPrismaService.attempt.findUnique.mockResolvedValue({
         id: 'attempt-1',
         studentId: 'student-1',
@@ -65,7 +65,7 @@ describe('IntegrityCaptureService', () => {
 
       const result = await service.recordVisibilityLost('attempt-1', 'student-1');
 
-      expect(result).toBe('recorded');
+      expect(result).toBe('accepted');
       expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
 
       const [sqlParts] = mockPrismaService.$executeRaw.mock.calls[0];
@@ -76,7 +76,7 @@ describe('IntegrityCaptureService', () => {
       expect(sql).toContain("INTERVAL '2 seconds'");
     });
 
-    it('still swallows a genuine database error during the insert and logs it, returning "recorded" optimistically', async () => {
+    it('returns "accepted" even when the DB insert fails and is swallowed — same label as a real write, by design', async () => {
       mockPrismaService.attempt.findUnique.mockResolvedValue({
         id: 'attempt-1',
         studentId: 'student-1',
@@ -88,10 +88,9 @@ describe('IntegrityCaptureService', () => {
       const dbError = new Error('Database error during raw execute');
       mockPrismaService.$executeRaw.mockRejectedValue(dbError);
 
-      await expect(
-        service.recordVisibilityLost('attempt-1', 'student-1'),
-      ).resolves.not.toThrow();
+      const result = await service.recordVisibilityLost('attempt-1', 'student-1');
 
+      expect(result).toBe('accepted');
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('attempt-1'),
