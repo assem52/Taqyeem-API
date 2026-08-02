@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-export type CaptureResult = 'accepted' | 'ignored' | 'forbidden';
+export type CaptureResult = 'recorded' | 'ignored' | 'forbidden';
 
 @Injectable()
 export class IntegrityCaptureService {
@@ -13,11 +13,9 @@ export class IntegrityCaptureService {
     const attempt = await this.prisma.attempt.findUnique({ where: { id: attemptId } });
 
     if (!attempt || attempt.status !== 'IN_PROGRESS') {
-      // "Events for a submitted attempt are ignored silently" — unchanged.
       return 'ignored';
     }
     if (attempt.studentId !== studentId) {
-
       return 'forbidden';
     }
 
@@ -38,13 +36,13 @@ export class IntegrityCaptureService {
             AND "occurred_at" > NOW() - INTERVAL '2 seconds'
         )
       `;
-    } catch (error) 
+    } catch (error) {
       const stack = error instanceof Error ? error.stack : undefined;
       this.logger.warn(
         `Failed to record visibility loss for attempt ${attemptId}`,
         stack,
       );
     }
-    return 'accepted';
+    return 'recorded';
   }
 }
