@@ -1,13 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-export type CaptureResult = 'recorded' | 'ignored' | 'forbidden';
+export type CaptureResult = 'accepted' | 'ignored' | 'forbidden';
 
 @Injectable()
 export class IntegrityCaptureService {
   private readonly logger = new Logger(IntegrityCaptureService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
   async recordVisibilityLost(attemptId: string, studentId: string): Promise<CaptureResult> {
     const attempt = await this.prisma.attempt.findUnique({ where: { id: attemptId } });
 
@@ -16,7 +17,6 @@ export class IntegrityCaptureService {
       return 'ignored';
     }
     if (attempt.studentId !== studentId) {
-
       return 'forbidden';
     }
 
@@ -44,6 +44,6 @@ export class IntegrityCaptureService {
         stack,
       );
     }
-    return 'recorded';
+    return 'accepted';
   }
 }
