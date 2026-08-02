@@ -1,7 +1,8 @@
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
 import { QuestionAnalyticsService } from './question-analytics.service';
+import { UseGuards } from '@nestjs/common';
 import { RolesGuard } from '../common/guards/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator.ts';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @UseGuards(RolesGuard)
 @Roles('ADMIN')
