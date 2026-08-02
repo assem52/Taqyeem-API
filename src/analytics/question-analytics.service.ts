@@ -6,95 +6,62 @@ export class QuestionAnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getQuestionAnalytics(quizId: string) {
-    const quiz = await this.prisma.quiz.findUnique({
-      where: { id: quizId },
+    const questions = await this.prisma.question.findMany({
+      where: { quizId },
       include: {
-        questions: true,
-        attempts: true,
+        answers: true, 
       },
     });
 
-    if (!quiz || quiz.attempts.length === 0) {
+    if (!questions || questions.length === 0) {
       return {
-        message: 'No analytics available yet. This quiz has no attempts recorded.',
+        quizId,
+        questions: [],
+        message: 'No questions or analytics found for this quiz.',
       };
     }
 
-    const attemptIds = quiz.attempts.map((attempt) => attempt.id);
-    const prismaClient = this.prisma as any;
-    const answers = await prismaClient.answer.findMany({
-      where: {
-        attemptId: { in: attemptIds },
-      },
-    });
+    const questionAnalytics = questions.map((question) => {
+      const answers = question.answers || [];
+      const totalAttempts = answers.length;
 
-    const answersByAttempt = new Map<string, any[]>();
-    attemptIds.forEach((attemptId) => {
-      answersByAttempt.set(
-        attemptId,
-        answers.filter((answer: any) => answer.attemptId === attemptId),
-      );
-    });
+      const correctCount = answers.filter((ans: any) => ans.isCorrect).length;
+      const wrongCount = answers.filter((ans: any) => !ans.isCorrect && ans.selectedOption !== null).length;
+      const skippedCount = answers.filter((ans: any) => ans.selectedOption === null || ans.isSkipped).length;
 
-    const totalAttempts = quiz.attempts.length;
+      const correctRate = totalAttempts > 0 ? (correctCount / totalAttempts) * 100 : 0;
+      const wrongRate = totalAttempts > 0 ? (wrongCount / totalAttempts) * 100 : 0;
+      const skippedRate = totalAttempts > 0 ? (skippedCount / totalAttempts) * 100 : 0;
 
-    const insights = quiz.questions.map((question: any) => {
-      const correctAnswer = question.correctAnswer;
-      let correctCount = 0;
-      let wrongCount = 0;
-      let skippedCount = 0;
-
-      quiz.attempts.forEach((attempt) => {
-        const studentAnswer = (answersByAttempt.get(attempt.id) ?? []).find(
-          (a: any) => a.questionId === question.id,
-        );
-
-        if (!studentAnswer || !studentAnswer.selectedOption) {
-          skippedCount++;
-        } else if (studentAnswer.selectedOption === correctAnswer) {
-          correctCount++;
-        } else {
-          wrongCount++;
-        }
-      });
-
-      const correctRate = totalAttempts > 0 ? Math.round((correctCount / totalAttempts) * 100) : 0;
-      const wrongRate = totalAttempts > 0 ? Math.round((wrongCount / totalAttempts) * 100) : 0;
-
-      let difficultyLabel = 'Normal';
+      let difficulty = 'Moderate';
       let adminNote = '';
 
       if (correctRate < 30) {
-        difficultyLabel = 'Hard';
-        adminNote = 'A question everybody answered wrong is presented as a probably-bad question, not a bad cohort.';
+        difficulty = 'Hard';
+        adminNote = 'Low correct rate. Consider reviewing prompt design or clarity.';
       } else if (correctRate > 80) {
-        difficultyLabel = 'Easy';
+        difficulty = 'Easy';
+        adminNote = 'High correct rate. Question might be too straightforward.';
       }
 
       return {
         questionId: question.id,
         questionText: question.text,
-        isHidden: question.isHidden,
-        metrics: {
-          correctCount,
-          correctRate: `${correctRate}% (Calculated as: correct answers divided by total attempts)`,
-          wrongCount,
-          wrongRate: `${wrongRate}% (Calculated as: incorrect answers divided by total attempts)`,
-          skippedCount,
-          skippedCountCalculation: 'Tracked per attempt where the question was left unselected',
-        },
-        difficultyLabel,
+        totalAttempts,
+        correctCount,
+        wrongCount,
+        skippedCount,
+        correctRate: Number(correctRate.toFixed(2)),
+        wrongRate: Number(wrongRate.toFixed(2)),
+        skippedRate: Number(skippedRate.toFixed(2)),
+        difficulty,
         adminNote,
       };
     });
 
-    const hardestQuestions = insights.filter((q) => q.difficultyLabel === 'Hard');
-
     return {
-      quizId: quiz.id,
-      totalAttemptsAnalyzed: totalAttempts,
-      hardestQuestionsHighlight: hardestQuestions,
-      allQuestionsInsights: insights,
+      quizId,
+      questionAnalytics,
     };
   }
 }

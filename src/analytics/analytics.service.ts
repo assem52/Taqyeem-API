@@ -1,40 +1,50 @@
 import { Injectable } from '@nestjs/common';
-import { QuizAnalyticsDto } from './dto/quiz-analytics.dto';
+import { PrismaService } from '../common/prisma/prisma.service';
 
 @Injectable()
 export class AnalyticsService {
-  getQuizAnalytics(quizId: string): QuizAnalyticsDto | { message: string } {
-    const mockData: Record<string, any> = {
-      'quiz-1': {
-        quizId: 'quiz-1',
-        invitedCount: 50,
-        startedCount: 40,
-        submittedCount: 35,
-        totalScoreSum: 2800, 
-        passedCount: 28,
-      },
-    };
+  constructor(private readonly prisma: PrismaService) {}
 
-    const data = mockData[quizId];
+  async getQuizAnalytics(quizId: string) {
+    
+    const quiz = await this.prisma.quiz.findUnique({
+      where: { id: quizId },
+      include: { attempts: true },
+    });
 
-    if (!data || data.startedCount === 0) {
+    if (!quiz) {
       return {
-        message: 'This quiz has no attempts yet. Analytics will appear once learners start participating.',
+        quizId,
+        invitedCount: 0,
+        startedCount: 0,
+        submittedCount: 0,
+        completionRate: 0,
+        averageScore: 0,
+        passRate: 0,
+        message: 'No analytics found: Quiz does not exist.',
       };
     }
 
-    const completionRate = Math.round((data.submittedCount / data.startedCount) * 100);
-    const averageScore = Math.round(data.totalScoreSum / data.submittedCount);
-    const passRate = Math.round((data.passedCount / data.submittedCount) * 100);
+    const attempts = quiz.attempts || [];
+    const startedCount = attempts.filter((a) => a.status === 'STARTED' || a.status === 'SUBMITTED').length;
+    const submittedCount = attempts.filter((a) => a.status === 'SUBMITTED').length;
+    const invitedCount = attempts.length; // أو استبدالها بجدول الـ Enrollments لو موجود
+
+    const totalScores = attempts.reduce((acc, curr) => acc + (curr.score || 0), 0);
+    const averageScore = submittedCount > 0 ? totalScores / submittedCount : 0;
+
+    const passedCount = attempts.filter((a) => (a.score || 0) >= (quiz.passScore || 50)).length;
+    const passRate = submittedCount > 0 ? (passedCount / submittedCount) * 100 : 0;
+    const completionRate = invitedCount > 0 ? (submittedCount / invitedCount) * 100 : 0;
 
     return {
-      quizId: data.quizId,
-      invitedCount: data.invitedCount,
-      startedCount: data.startedCount,
-      submittedCount: data.submittedCount,
-      completionRate, 
-      averageScore,  
-      passRate,       
+      quizId,
+      invitedCount,
+      startedCount,
+      submittedCount,
+      completionRate: Number(completionRate.toFixed(2)),
+      averageScore: Number(averageScore.toFixed(2)),
+      passRate: Number(passRate.toFixed(2)),
     };
   }
 }
