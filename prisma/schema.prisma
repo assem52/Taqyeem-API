@@ -2,64 +2,73 @@
 generator client {
   provider = "prisma-client-js"
 }
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
 model Student {
-  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name        String
-  email       String       @unique
+  email       String        @unique
   status      StudentStatus @default(VERIFIED)
   enrollments Enrollment[]
   attempts    Attempt[]
 }
-model Attempt { 
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  quizId    String   @db.Uuid
-  quiz      Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  studentId String   @db.Uuid
-  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  startedAt DateTime @default(now()) @map("started_at")
-  submittedAt DateTime? @map("submitted_at")
-  status      AttemptStatus @default(IN_PROGRESS)
-  attemptAnswers     Json?        @db.JsonB
-  score       Decimal?
-  questionSnapshot   Json?        @db.JsonB
+
+model Attempt {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quizId           String           @db.Uuid
+  quiz             Quiz             @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  studentId        String           @db.Uuid
+  student          Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  startedAt        DateTime         @default(now()) @map("started_at")
+  submittedAt      DateTime?        @map("submitted_at")
+  status           AttemptStatus    @default(IN_PROGRESS)
+  attemptAnswers   Json?            @db.JsonB
+  score            Decimal?
+  questionSnapshot Json?            @db.JsonB
+  integrityEvents  IntegrityEvent[]
+
   @@unique([quizId, studentId])
-integrityEvents IntegrityEvent[]
 }
+
 model Enrollment {
-  quizId      String           @db.Uuid
-  studentId   String           @db.Uuid
-  quiz        Quiz             @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  student     Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  quizId    String  @db.Uuid
+  studentId String  @db.Uuid
+  quiz      Quiz    @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
   @@unique([quizId, studentId])
 }
+
 model Quiz {
-  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  title       String
-  description String?
-  createdAt   DateTime       @default(now()) @map("created_at")
-  openDate    DateTime       @default(now()) @map("open_date")
-  duration    Int            @default(60)
-  closesAt    DateTime       @map("close_at")
-  passScore   Decimal?       @map("pass_score") @db.Decimal(5, 2)
-  status      QuizStatus     @default(DRAFT)
-  questions   Question[]
-  enrollments Enrollment[]
-  attempts    Attempt[]
-integrityThreshold Int @default(5) @map("integrity_threshold")
+  id                 String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title              String
+  description        String?
+  createdAt          DateTime     @default(now()) @map("created_at")
+  openDate           DateTime     @default(now()) @map("open_date")
+  duration           Int          @default(60)
+  closesAt           DateTime     @map("close_at")
+  passScore          Decimal?     @map("pass_score") @db.Decimal(5, 2)
+  status             QuizStatus   @default(DRAFT)
+  questions          Question[]
+  enrollments        Enrollment[]
+  invitations        Invitation[]
+  attempts           Attempt[]
+  integrityThreshold Int          @default(5) @map("integrity_threshold")
 }
+
 model Question {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  quizId    String   @db.Uuid
-  quiz      Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  text      String
-  isHidden  Boolean  @default(false) @map("is_hidden")
-  points    Decimal  @default(1)  @db.Decimal(7, 2)
-  type      QuestionType  @default(MCQ)
-  options     QuizOption[]
+  id       String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quizId   String       @db.Uuid
+  quiz     Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  text     String
+  isHidden Boolean      @default(false) @map("is_hidden")
+  points   Decimal      @default(1) @db.Decimal(7, 2)
+  type     QuestionType @default(MCQ)
+  options  QuizOption[]
 }
 
 enum QuestionType {
@@ -69,72 +78,112 @@ enum QuestionType {
 }
 
 model QuizOption {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  questionId    String   @db.Uuid
-  question      Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  option    String
-  isCorrect Boolean  @default(false)
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  questionId String   @db.Uuid
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  option     String
+  isCorrect  Boolean  @default(false)
 }
+
 model Document {
-  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  title       String
-  source      String
-  sourceType  SourceType
-  cohort      String?    @db.VarChar(100)
-  metadata    Json?      @db.JsonB
-  content     String?    @db.Text
-  createdAt   DateTime   @default(now()) @map("created_at")
-  updatedAt   DateTime   @updatedAt @map("updated_at")
-  
-  chunks      Chunk[]
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title      String
+  source     String
+  sourceType SourceType
+  cohort     String?    @db.VarChar(100)
+  metadata   Json?      @db.JsonB
+  content    String?    @db.Text
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  chunks Chunk[]
+
   @@unique([source, title])
   @@map("documents")
 }
-model Extension {
-     id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-     name      String   @unique
-     createdAt DateTime @default(now()) @map("created_at")
-     updatedAt DateTime @updatedAt @map("updated_at")
 
-     @@map("extensions")
-   }
+model Extension {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("extensions")
+}
+
 model Chunk {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  documentId   String   @db.Uuid
-  content      String   @db.Text
-  contentHash  String   @unique @db.VarChar(64)
-  embedding    Json?    @db.JsonB
+  id              String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  documentId      String                       @db.Uuid
+  content         String                       @db.Text
+  contentHash     String                       @unique @db.VarChar(64)
+  embedding       Json?                        @db.JsonB
   embeddingVector Unsupported("vector(1536)")?
-  chunkIndex   Int      @default(0)
-  metadata     Json?    @db.JsonB
-  
-  document     Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunkIndex      Int                          @default(0)
+  metadata        Json?                        @db.JsonB
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
   @@unique([documentId, chunkIndex])
   @@index([contentHash])
   @@index([documentId])
   @@map("chunks")
 }
+
 model IntegrityEvent {
-  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  attemptId   String             @db.Uuid
-  attempt     Attempt            @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  type        IntegrityEventType @default(VISIBILITY_LOST)
-  occurredAt  DateTime           @default(now()) @map("occurred_at")
+  id         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  attemptId  String             @db.Uuid
+  attempt    Attempt            @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  type       IntegrityEventType @default(VISIBILITY_LOST)
+  occurredAt DateTime           @default(now()) @map("occurred_at")
 
   @@index([attemptId])
 }
+
+// NOTE: Slot 3 (Invitations) and Slot 6 (email logs) don't exist in the repo
+// yet. These are minimal models to unblock the follow-up dashboard.
+model Invitation {
+  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quizId    String     @db.Uuid
+  quiz      Quiz       @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  email     String
+  invitedAt DateTime   @default(now()) @map("invited_at")
+  emailLogs EmailLog[]
+
+  @@index([quizId, email])
+}
+
+model EmailLog {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  invitationId String         @db.Uuid
+  invitation   Invitation     @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+  status       EmailLogStatus @default(SENT)
+  occurredAt   DateTime       @default(now()) @map("occurred_at")
+  errorMessage String?        @map("error_message")
+
+  @@index([invitationId])
+}
+
+enum EmailLogStatus {
+  SENT
+  FAILED
+}
+
+
 enum IntegrityEventType {
   VISIBILITY_LOST
 }
+
 enum StudentStatus {
-  VERIFIED  
+  VERIFIED
   UNVERIFIED
 }
+
 enum QuizStatus {
   DRAFT
   PUBLISHED
   ARCHIVED
 }
+
 enum SourceType {
   FAQ
   ONBOARDING
@@ -142,6 +191,7 @@ enum SourceType {
   PROGRAM_DOC
   OTHER
 }
+
 enum AttemptStatus {
   IN_PROGRESS
   SUBMITTED
