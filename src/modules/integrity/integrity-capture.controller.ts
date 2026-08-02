@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   ForbiddenException,
   HttpCode,
@@ -19,15 +20,20 @@ export class IntegrityCaptureController {
     @Headers('x-student-id') studentId?: string,
   ) {
     const resolvedStudentId = studentId ?? process.env.MOCK_STUDENT_ID;
+
     if (!resolvedStudentId) {
-      return { received: true }; 
+      throw new BadRequestException('Student identity is required.');
     }
 
-    const result = await this.captureService.recordVisibilityLost(attemptId, resolvedStudentId);
+    const result = await this.captureService.recordVisibilityLost(
+      attemptId,
+      resolvedStudentId,
+    );
 
     if (result === 'forbidden') {
       throw new ForbiddenException('This attempt does not belong to you.');
     }
+
     return { received: true };
   }
 }
