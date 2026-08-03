@@ -47,4 +47,4 @@ export class AttemptController {
     const score = await this.attemptScoringService.submitAttempt(attemptId);
     return { score };
   }
-} 
+}
