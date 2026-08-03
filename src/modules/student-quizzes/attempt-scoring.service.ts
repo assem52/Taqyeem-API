@@ -1,8 +1,15 @@
-import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ScoreEventsService } from './events/score-events.service';
 import { AttemptAnswers, computeScore, QuestionSnapshotItem, ScoreResult } from './scoring';
+import { deriveStudentState, resolveAccess } from './student-quiz-state';
 
 interface SubmitResult {
   score: ScoreResult;
@@ -11,33 +18,98 @@ interface SubmitResult {
   quizId: string;
 }
 
+export interface StartAttemptResult {
+  attemptId: string;
+  status: 'IN_PROGRESS';
+}
+
 @Injectable()
 export class AttemptScoringService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: ScoreEventsService,
   ) {}
-  async saveAnswer(attemptId: string, questionId: string, selectedOptionId: string | null): Promise<void> {
-    const entry = JSON.stringify({ selectedOptionId, answeredAt: new Date().toISOString() });
+  async startAttempt(studentId: string, quizId: string): Promise<StartAttemptResult> {
+    const student = await this.prisma.student.findUnique({ where: { id: studentId } });
+    if (!student) {
+      throw new NotFoundException('Student not found');
+    }
 
-    const affected = await this.prisma.$executeRaw`
-      UPDATE "Attempt"
-      SET "attemptAnswers" = jsonb_set(
-        COALESCE("attemptAnswers", '{}'::jsonb),
-        ARRAY[${questionId}]::text[],
-        ${entry}::jsonb,
-        true
-      )
-      WHERE id = ${attemptId}::uuid AND status = 'IN_PROGRESS'::"AttemptStatus"
-    `;
+    const quiz = await this.prisma.quiz.findUnique({ where: { id: quizId } });
+    if (!quiz || quiz.status !== 'PUBLISHED') {
+      throw new NotFoundException('This quiz link is invalid.');
+    }
 
-    if (affected === 0) {
-      const attempt = await this.prisma.attempt.findUnique({ where: { id: attemptId } });
-      if (!attempt) throw new NotFoundException('Attempt not found');
-      throw new ConflictException('Cannot change answers after submission');
+    const enrollment = await this.prisma.enrollment.findUnique({
+      where: { quizId_studentId: { quizId, studentId } },
+    });
+    if (!enrollment) {
+      throw new ForbiddenException('You have not been invited to this quiz.');
+    }
+
+    const existing = await this.prisma.attempt.findUnique({
+      where: { quizId_studentId: { quizId, studentId } },
+    });
+    if (existing) {
+      if (existing.status === 'IN_PROGRESS') {
+        return { attemptId: existing.id, status: 'IN_PROGRESS' };
+      }
+      throw new ConflictException('You have already submitted this quiz.');
+    }
+
+    const now = new Date();
+    const studentState = deriveStudentState(undefined, quiz.openDate, quiz.closesAt, now);
+    const { canStart, blockedReason } = resolveAccess(
+      student.status,
+      studentState,
+      quiz.openDate,
+      quiz.closesAt,
+    );
+    if (!canStart) {
+      throw new ForbiddenException(blockedReason ?? 'This quiz cannot be started right now.');
+    }
+
+    try {
+      const attempt = await this.prisma.attempt.create({
+        data: { studentId, quizId, status: 'IN_PROGRESS', startedAt: now },
+      });
+      return { attemptId: attempt.id, status: 'IN_PROGRESS' };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+
+        const winner = await this.prisma.attempt.findUnique({
+          where: { quizId_studentId: { quizId, studentId } },
+        });
+        if (winner) {
+          return { attemptId: winner.id, status: 'IN_PROGRESS' };
+        }
+      }
+      throw error;
     }
   }
 
+  /**
+   * Save (or overwrite) a single answer as the student picks it.
+   * Call this on every selection, not just at submit time.
+   */
+  async saveAnswer(attemptId: string, questionId: string, selectedOptionId: string | null): Promise<void> {
+    const attempt = await this.prisma.attempt.findUnique({ where: { id: attemptId } });
+    if (!attempt) throw new NotFoundException('Attempt not found');
+    if (attempt.status === 'SUBMITTED') {
+      throw new ConflictException('Cannot change answers after submission');
+    }
+
+    await this.prisma.answer.upsert({
+      where: { attemptId_questionId: { attemptId, questionId } },
+      create: { attemptId, questionId, selectedOptionId, answeredAt: new Date() },
+      update: { selectedOptionId, answeredAt: new Date() },
+    });
+  }
+
+  /**
+   * Submit an attempt: claim it, snapshot the live questions/options, score,
+   * and persist the snapshot + score — all inside one $transaction.
+   */
   async submitAttempt(attemptId: string): Promise<ScoreResult> {
     let result: SubmitResult;
     try {
@@ -58,7 +130,6 @@ export class AttemptScoringService {
       );
     } catch (error) {
       if (this.isTransactionTimeout(error)) {
-    
         throw new ServiceUnavailableException(
           'Submission is taking longer than expected. Please try submitting again.',
         );
@@ -79,12 +150,14 @@ export class AttemptScoringService {
 
     return result.score;
   }
+
   private isTransactionTimeout(error: unknown): boolean {
     return (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P2028'
     );
   }
+
   private async scoreAndPersist(tx: Prisma.TransactionClient, attemptId: string): Promise<SubmitResult> {
     const attempt = await tx.attempt.findUnique({
       where: { id: attemptId },
@@ -106,7 +179,6 @@ export class AttemptScoringService {
     }));
 
     const answers = (attempt.attemptAnswers ?? {}) as unknown as AttemptAnswers;
-
     const passScorePercentage = attempt.quiz.passScore != null ? attempt.quiz.passScore.toNumber() : null;
 
     const score = computeScore(questionSnapshot, answers, {
