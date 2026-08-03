@@ -1,22 +1,32 @@
-import { Injectable, ExecutionContext } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
-import { Reflector } from '@nestjs/core';
+import { timingSafeEqual } from 'crypto';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 @Injectable()
-export class AdminGuard extends AuthGuard('jwt') {
-  constructor(private reflector: Reflector) {
-    super();
-  }
+export class AdminGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest();
+    const providedToken = request.headers['x-admin-token'];
+    const expectedToken = process.env.ADMIN_API_TOKEN;
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    const isAuthenticated = (await super.canActivate(context)) as boolean;
-    if (!isAuthenticated) {
-      return false;
+    if (!expectedToken) {
+      throw new UnauthorizedException('Admin access is not configured.');
     }
 
-    const request = context.switchToHttp().getRequest();
-    const user = request.user;
+    const provided = Buffer.from(String(providedToken ?? ''));
+    const expected = Buffer.from(expectedToken);
 
-    return user && user.role === 'ADMIN';
+    if (
+      provided.length !== expected.length ||
+      !timingSafeEqual(provided, expected)
+    ) {
+      throw new UnauthorizedException('Invalid admin token.');
+    }
+
+    return true;
   }
 }
