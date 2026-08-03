@@ -13,10 +13,12 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
-    const { email, password, name, role } = dto;
+    const { email, password, name } = dto;
 
     const existingUser = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    
     if (existingUser) {
+      await bcrypt.hash(password, 10);
       return { message: 'If this email can be registered, you will receive a confirmation.' };
     }
 
@@ -27,7 +29,7 @@ export class AuthService {
         email,
         password: hashedPassword,
         name,
-        role: role || 'STUDENT',
+        role: 'STUDENT', 
       },
     });
 
