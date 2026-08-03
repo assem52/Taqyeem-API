@@ -60,6 +60,20 @@ model Quiz {
   integrityThreshold Int          @default(5) @map("integrity_threshold")
 }
 
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(STUDENT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Role {
+  ADMIN
+  STUDENT
+}
 model Question {
   id       String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   quizId   String       @db.Uuid

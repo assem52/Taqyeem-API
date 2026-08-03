@@ -2,6 +2,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
 import { DocumentsModule } from './modules/documents/dto/documents.module';
 import { EmbeddingsModule } from './modules/embeddings/embeddings.module';
 import { IngestionModule } from './modules/ingestion/ingestion.module';
@@ -18,6 +19,7 @@ import { InvitationsModule } from './modules/invitations/invitations.module';
       envFilePath: '.env',
     }),
     PrismaModule,
+    AuthModule,
     DocumentsModule,
     EmbeddingsModule,
     IngestionModule,
@@ -28,5 +30,7 @@ import { InvitationsModule } from './modules/invitations/invitations.module';
     IntegrityModule,
     InvitationsModule,
   ],
+  controllers:[],
+  providers:[],
 })
 export class AppModule {}
