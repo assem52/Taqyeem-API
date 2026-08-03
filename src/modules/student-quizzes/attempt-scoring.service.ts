@@ -29,6 +29,7 @@ export class AttemptScoringService {
     private readonly prisma: PrismaService,
     private readonly events: ScoreEventsService,
   ) {}
+
   async startAttempt(studentId: string, quizId: string): Promise<StartAttemptResult> {
     const student = await this.prisma.student.findUnique({ where: { id: studentId } });
     if (!student) {
@@ -76,7 +77,8 @@ export class AttemptScoringService {
       return { attemptId: attempt.id, status: 'IN_PROGRESS' };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-
+        // Lost the race to create this attempt — the other caller's row
+        // already exists; return it rather than surfacing a raw 500.
         const winner = await this.prisma.attempt.findUnique({
           where: { quizId_studentId: { quizId, studentId } },
         });
@@ -86,6 +88,65 @@ export class AttemptScoringService {
       }
       throw error;
     }
+  }
+
+  async autoSubmitIfExpired(attemptId: string): Promise<ScoreResult | null> {
+    let result: SubmitResult | null;
+    try {
+      result = await this.prisma.$transaction(
+        async tx => {
+          const claimed = await tx.$executeRaw`
+            UPDATE "Attempt" a
+            SET status = 'AUTO_SUBMITTED'::"AttemptStatus", "submittedAt" = NOW()
+            FROM "Quiz" q
+            WHERE a.id = ${attemptId}::uuid
+              AND a."quizId" = q.id
+              AND a.status = 'IN_PROGRESS'::"AttemptStatus"
+              AND q."close_at" <= NOW()
+          `;
+
+          if (claimed === 0) {
+            return null;
+          }
+          return this.scoreAndPersist(tx, attemptId);
+        },
+        { timeout: 10_000, maxWait: 5_000 },
+      );
+    } catch (error) {
+      if (this.isTransactionTimeout(error)) {
+        throw new ServiceUnavailableException(
+          'Auto-submit check is taking longer than expected. Try again shortly.',
+        );
+      }
+      throw error;
+    }
+
+    if (!result) return null;
+
+    const payload = {
+      attemptId,
+      studentId: result.studentId,
+      quizId: result.quizId,
+      score: result.score,
+    };
+    this.events.publish('slot1.quiz.attempt.scored', payload);
+    this.events.publish('slot5.quiz.attempt.scored', payload);
+
+    return result.score;
+  }
+
+  async sweepExpiredAttemptsForQuiz(quizId: string): Promise<{ autoSubmittedCount: number }> {
+    const candidates = await this.prisma.attempt.findMany({
+      where: { quizId, status: 'IN_PROGRESS' },
+    });
+
+    let autoSubmittedCount = 0;
+    for (const candidate of candidates) {
+      const result = await this.autoSubmitIfExpired(candidate.id);
+      if (result) autoSubmittedCount += 1;
+    }
+
+    return { autoSubmittedCount };
   }
 
   /**
