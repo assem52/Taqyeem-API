@@ -149,10 +149,6 @@ export class AttemptScoringService {
     return { autoSubmittedCount };
   }
 
-  /**
-   * Save (or overwrite) a single answer as the student picks it.
-   * Call this on every selection, not just at submit time.
-   */
   async saveAnswer(attemptId: string, questionId: string, selectedOptionId: string | null): Promise<void> {
     const attempt = await this.prisma.attempt.findUnique({ where: { id: attemptId } });
     if (!attempt) throw new NotFoundException('Attempt not found');
@@ -167,10 +163,6 @@ export class AttemptScoringService {
     });
   }
 
-  /**
-   * Submit an attempt: claim it, snapshot the live questions/options, score,
-   * and persist the snapshot + score — all inside one $transaction.
-   */
   async submitAttempt(attemptId: string): Promise<ScoreResult> {
     let result: SubmitResult;
     try {
