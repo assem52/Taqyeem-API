@@ -56,6 +56,10 @@ pids
 *.seed
 *.pid.lock
 
+# Backups (protect PII data from being committed)
+backups/*
+!backups/.gitkeep
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
