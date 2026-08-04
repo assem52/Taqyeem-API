@@ -39,11 +39,7 @@ means a quiz that's all open-ended questions currently always scores 100%
 yet. **If manual grading is planned for Sprint 2, `ungradedCount` is the signal
 to build on; if it's not planned, this needs a different decision.**
 
-**2. `Quiz.passScore` is assumed to be a percentage (0–100), matching `Attempt.score`.**
-Both are stored as the same unit in the current implementation. If `passScore`
-is meant to represent raw points instead, the `passed` comparison in
-`computeScore()` is wrong and needs to compare against `rawScore` instead of
-`percentage`. Worth a one-line confirmation from whoever owns `Quiz`.
+**2. `Quiz.passScore`passScore unit — CONFIRMED as a percentage (0-100), compared directly against the computed score percentage. No further action needed.
 
 ## One dependency this PR doesn't cover: `AUTO_SUBMITTED`
 

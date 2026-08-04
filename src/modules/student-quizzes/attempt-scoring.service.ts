@@ -1,8 +1,15 @@
-import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ScoreEventsService } from './events/score-events.service';
 import { AttemptAnswers, computeScore, QuestionSnapshotItem, ScoreResult } from './scoring';
+import { deriveStudentState, resolveAccess } from './student-quiz-state';
 
 interface SubmitResult {
   score: ScoreResult;
@@ -11,31 +18,149 @@ interface SubmitResult {
   quizId: string;
 }
 
+export interface StartAttemptResult {
+  attemptId: string;
+  status: 'IN_PROGRESS';
+}
+
 @Injectable()
 export class AttemptScoringService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: ScoreEventsService,
   ) {}
+
+  async startAttempt(studentId: string, quizId: string): Promise<StartAttemptResult> {
+    const student = await this.prisma.student.findUnique({ where: { id: studentId } });
+    if (!student) {
+      throw new NotFoundException('Student not found');
+    }
+
+    const quiz = await this.prisma.quiz.findUnique({ where: { id: quizId } });
+    if (!quiz || quiz.status !== 'PUBLISHED') {
+      throw new NotFoundException('This quiz link is invalid.');
+    }
+
+    const enrollment = await this.prisma.enrollment.findUnique({
+      where: { quizId_studentId: { quizId, studentId } },
+    });
+    if (!enrollment) {
+      throw new ForbiddenException('You have not been invited to this quiz.');
+    }
+
+    const existing = await this.prisma.attempt.findUnique({
+      where: { quizId_studentId: { quizId, studentId } },
+    });
+    if (existing) {
+      if (existing.status === 'IN_PROGRESS') {
+        return { attemptId: existing.id, status: 'IN_PROGRESS' };
+      }
+      throw new ConflictException('You have already submitted this quiz.');
+    }
+
+    const now = new Date();
+    const studentState = deriveStudentState(undefined, quiz.openDate, quiz.closesAt, now);
+    const { canStart, blockedReason } = resolveAccess(
+      student.status,
+      studentState,
+      quiz.openDate,
+      quiz.closesAt,
+    );
+    if (!canStart) {
+      throw new ForbiddenException(blockedReason ?? 'This quiz cannot be started right now.');
+    }
+
+    try {
+      const attempt = await this.prisma.attempt.create({
+        data: { studentId, quizId, status: 'IN_PROGRESS', startedAt: now },
+      });
+      return { attemptId: attempt.id, status: 'IN_PROGRESS' };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        // Lost the race to create this attempt — the other caller's row
+        // already exists; return it rather than surfacing a raw 500.
+        const winner = await this.prisma.attempt.findUnique({
+          where: { quizId_studentId: { quizId, studentId } },
+        });
+        if (winner) {
+          return { attemptId: winner.id, status: 'IN_PROGRESS' };
+        }
+      }
+      throw error;
+    }
+  }
+
+  async autoSubmitIfExpired(attemptId: string): Promise<ScoreResult | null> {
+    let result: SubmitResult | null;
+    try {
+      result = await this.prisma.$transaction(
+        async tx => {
+          const claimed = await tx.$executeRaw`
+            UPDATE "Attempt" a
+            SET status = 'AUTO_SUBMITTED'::"AttemptStatus", "submittedAt" = NOW()
+            FROM "Quiz" q
+            WHERE a.id = ${attemptId}::uuid
+              AND a."quizId" = q.id
+              AND a.status = 'IN_PROGRESS'::"AttemptStatus"
+              AND q."close_at" <= NOW()
+          `;
+
+          if (claimed === 0) {
+            return null;
+          }
+          return this.scoreAndPersist(tx, attemptId);
+        },
+        { timeout: 10_000, maxWait: 5_000 },
+      );
+    } catch (error) {
+      if (this.isTransactionTimeout(error)) {
+        throw new ServiceUnavailableException(
+          'Auto-submit check is taking longer than expected. Try again shortly.',
+        );
+      }
+      throw error;
+    }
+
+    if (!result) return null;
+
+    const payload = {
+      attemptId,
+      studentId: result.studentId,
+      quizId: result.quizId,
+      score: result.score,
+    };
+    this.events.publish('slot1.quiz.attempt.scored', payload);
+    this.events.publish('slot5.quiz.attempt.scored', payload);
+
+    return result.score;
+  }
+
+  async sweepExpiredAttemptsForQuiz(quizId: string): Promise<{ autoSubmittedCount: number }> {
+    const candidates = await this.prisma.attempt.findMany({
+      where: { quizId, status: 'IN_PROGRESS' },
+    });
+
+    let autoSubmittedCount = 0;
+    for (const candidate of candidates) {
+      const result = await this.autoSubmitIfExpired(candidate.id);
+      if (result) autoSubmittedCount += 1;
+    }
+
+    return { autoSubmittedCount };
+  }
+
   async saveAnswer(attemptId: string, questionId: string, selectedOptionId: string | null): Promise<void> {
-    const entry = JSON.stringify({ selectedOptionId, answeredAt: new Date().toISOString() });
-
-    const affected = await this.prisma.$executeRaw`
-      UPDATE "Attempt"
-      SET "attemptAnswers" = jsonb_set(
-        COALESCE("attemptAnswers", '{}'::jsonb),
-        ARRAY[${questionId}]::text[],
-        ${entry}::jsonb,
-        true
-      )
-      WHERE id = ${attemptId}::uuid AND status = 'IN_PROGRESS'::"AttemptStatus"
-    `;
-
-    if (affected === 0) {
-      const attempt = await this.prisma.attempt.findUnique({ where: { id: attemptId } });
-      if (!attempt) throw new NotFoundException('Attempt not found');
+    const attempt = await this.prisma.attempt.findUnique({ where: { id: attemptId } });
+    if (!attempt) throw new NotFoundException('Attempt not found');
+    if (attempt.status === 'SUBMITTED') {
       throw new ConflictException('Cannot change answers after submission');
     }
+
+    await this.prisma.answer.upsert({
+      where: { attemptId_questionId: { attemptId, questionId } },
+      create: { attemptId, questionId, selectedOptionId, answeredAt: new Date() },
+      update: { selectedOptionId, answeredAt: new Date() },
+    });
   }
 
   async submitAttempt(attemptId: string): Promise<ScoreResult> {
@@ -58,7 +183,6 @@ export class AttemptScoringService {
       );
     } catch (error) {
       if (this.isTransactionTimeout(error)) {
-    
         throw new ServiceUnavailableException(
           'Submission is taking longer than expected. Please try submitting again.',
         );
@@ -79,12 +203,14 @@ export class AttemptScoringService {
 
     return result.score;
   }
+
   private isTransactionTimeout(error: unknown): boolean {
     return (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P2028'
     );
   }
+
   private async scoreAndPersist(tx: Prisma.TransactionClient, attemptId: string): Promise<SubmitResult> {
     const attempt = await tx.attempt.findUnique({
       where: { id: attemptId },
@@ -106,7 +232,6 @@ export class AttemptScoringService {
     }));
 
     const answers = (attempt.attemptAnswers ?? {}) as unknown as AttemptAnswers;
-
     const passScorePercentage = attempt.quiz.passScore != null ? attempt.quiz.passScore.toNumber() : null;
 
     const score = computeScore(questionSnapshot, answers, {

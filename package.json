@@ -22,7 +22,9 @@
     "migrate:deploy": "prisma migrate deploy",
     "studio": "prisma studio",
     "generate": "prisma generate",
-    "test:ingestion": "ts-node scripts/test-ingestion.ts"
+    "test:ingestion": "ts-node scripts/test-ingestion.ts",
+    "backup": "ts-node scripts/backup.ts",
+    "restore": "ts-node scripts/restore.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

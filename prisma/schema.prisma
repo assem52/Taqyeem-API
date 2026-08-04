@@ -30,6 +30,7 @@ model Attempt {
   score            Decimal?
   questionSnapshot Json?            @db.JsonB
   integrityEvents  IntegrityEvent[]
+  answers          Answer[]
 
   @@unique([quizId, studentId])
 }
@@ -83,6 +84,7 @@ model Question {
   points   Decimal      @default(1) @db.Decimal(7, 2)
   type     QuestionType @default(MCQ)
   options  QuizOption[]
+  answers   Answer[]
 }
 
 enum QuestionType {
@@ -141,6 +143,18 @@ model Chunk {
   @@index([contentHash])
   @@index([documentId])
   @@map("chunks")
+}
+
+model Answer {
+  attemptId        String    @db.Uuid
+  attempt          Attempt   @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId       String    @db.Uuid
+  question         Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedOptionId String?   @db.Uuid
+  answeredAt       DateTime  @default(now()) @map("answered_at")
+
+  @@id([attemptId, questionId])
+  @@index([attemptId])
 }
 
 model IntegrityEvent {
