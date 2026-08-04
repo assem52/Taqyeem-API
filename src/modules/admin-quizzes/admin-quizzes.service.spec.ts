@@ -50,7 +50,7 @@ function createService() {
 
 describe('AdminQuizzesService', () => {
   describe('createQuiz', () => {
-    it('creates a draft quiz successfully', async () => {
+    it('creates a draft quiz with duration, active dates, and pass score successfully', async () => {
       const { service, prisma } = createService();
       const now = new Date();
       const future = new Date(now.getTime() + 86400000);
@@ -62,7 +62,7 @@ describe('AdminQuizzesService', () => {
         duration: 45,
         openDate: now,
         closesAt: future,
-        passScore: 70,
+        passScore: 75,
         status: QuizStatus.DRAFT,
         questions: [],
       });
@@ -73,12 +73,15 @@ describe('AdminQuizzesService', () => {
         duration: 45,
         openDate: now.toISOString(),
         closesAt: future.toISOString(),
-        passScore: 70,
+        passScore: 75,
       });
 
       expect(result.quizId).toBe('new-quiz-id');
       expect(result.status).toBe(QuizStatus.DRAFT);
       expect(result.duration).toBe(45);
+      expect(result.passScore).toBe(75);
+      expect(result.openDate).toBe(now.toISOString());
+      expect(result.closesAt).toBe(future.toISOString());
     });
 
     it('rejects creation when openDate is after closesAt', async () => {
@@ -93,6 +96,57 @@ describe('AdminQuizzesService', () => {
           closesAt: past.toISOString(),
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('listQuizzes', () => {
+    it('filters quizzes by status and search term', async () => {
+      const { service, prisma } = createService();
+      const now = new Date();
+
+      prisma.quiz.findMany.mockResolvedValue([
+        {
+          id: publishableQuizId,
+          title: 'Calculus Final',
+          description: 'Advanced Math',
+          status: QuizStatus.PUBLISHED,
+          duration: 90,
+          openDate: now,
+          closesAt: now,
+          passScore: 80,
+          questions: [],
+        },
+      ]);
+      prisma.attempt.groupBy.mockResolvedValue([
+        { quizId: publishableQuizId, _count: { id: 3 } },
+      ]);
+
+      const results = await service.listQuizzes({
+        search: 'Calculus',
+        status: QuizStatus.PUBLISHED,
+      });
+
+      expect(prisma.quiz.findMany).toHaveBeenCalledWith({
+        where: {
+          status: QuizStatus.PUBLISHED,
+          OR: [
+            { title: { contains: 'Calculus', mode: 'insensitive' } },
+            { description: { contains: 'Calculus', mode: 'insensitive' } },
+          ],
+        },
+        include: {
+          questions: {
+            include: { options: true },
+            orderBy: { id: 'asc' },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      expect(results.length).toBe(1);
+      expect(results[0].title).toBe('Calculus Final');
+      expect(results[0].attemptCount).toBe(3);
+      expect(results[0].passScore).toBe(80);
     });
   });
 
@@ -205,6 +259,41 @@ describe('AdminQuizzesService', () => {
       await expect(
         service.updateQuiz(lockedQuizId, { duration: 90 }),
       ).rejects.toThrow(ATTEMPT_LOCK_MESSAGE);
+    });
+
+    it('allows full structural edits (duration, dates, pass score) when zero attempts exist', async () => {
+      const { service, prisma } = createService();
+      const now = new Date();
+      const nextWeek = new Date(now.getTime() + 7 * 86400000);
+
+      prisma.attempt.count.mockResolvedValue(0);
+      prisma.quiz.findUnique.mockResolvedValue({ id: 'unlocked-q' });
+      prisma.quiz.update.mockResolvedValue({ id: 'unlocked-q' });
+
+      prisma.quiz.findUnique.mockResolvedValueOnce({ id: 'unlocked-q' }).mockResolvedValueOnce({
+        id: 'unlocked-q',
+        title: 'Updated Quiz',
+        description: 'New Description',
+        status: QuizStatus.DRAFT,
+        openDate: now,
+        closesAt: nextWeek,
+        duration: 120,
+        passScore: 85,
+        questions: [validQuestion],
+      });
+
+      const result = await service.updateQuiz('unlocked-q', {
+        title: 'Updated Quiz',
+        duration: 120,
+        openDate: now.toISOString(),
+        closesAt: nextWeek.toISOString(),
+        passScore: 85,
+      });
+
+      expect(result.duration).toBe(120);
+      expect(result.passScore).toBe(85);
+      expect(result.openDate).toBe(now.toISOString());
+      expect(result.closesAt).toBe(nextWeek.toISOString());
     });
 
     it('allows title edits when attempts exist', async () => {
