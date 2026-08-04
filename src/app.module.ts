@@ -1,7 +1,9 @@
 // src/app.module.ts
 import { Module } from '@nestjs/common';
+import { QuestionsModule } from './modules/questions/questions.module';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
 import { DocumentsModule } from './modules/documents/dto/documents.module';
 import { EmbeddingsModule } from './modules/embeddings/embeddings.module';
 import { IngestionModule } from './modules/ingestion/ingestion.module';
@@ -11,6 +13,7 @@ import { AdminQuizzesModule } from './modules/admin-quizzes/admin-quizzes.module
 import { AdminFollowUpModule } from './modules/admin-follow-up/admin-follow-up.module';
 import { IntegrityModule } from './modules/integrity/integrity.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -18,6 +21,7 @@ import { InvitationsModule } from './modules/invitations/invitations.module';
       envFilePath: '.env',
     }),
     PrismaModule,
+    AuthModule,
     DocumentsModule,
     EmbeddingsModule,
     IngestionModule,
@@ -27,6 +31,10 @@ import { InvitationsModule } from './modules/invitations/invitations.module';
     AdminFollowUpModule,
     IntegrityModule,
     InvitationsModule,
+    AnalyticsModule,
+    QuestionsModule,
   ],
+  controllers:[],
+  providers:[],
 })
 export class AppModule {}

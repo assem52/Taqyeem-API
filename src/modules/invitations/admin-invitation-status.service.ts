@@ -45,6 +45,10 @@ export class AdminInvitationStatusService {
     const invitedSet = new Set(invitedPeople);
 
     const factsByPerson = new Map<string, PersonAttemptFacts>();
+
+    // Accepting the invitation shows up as an Enrollment, before any Attempt
+    // exists. (Assumption — confirm this is how Slot 3 actually signals
+    // acceptance once it lands; swap this lookup if it works differently.)
     for (const enrollment of enrollments) {
       const email = normalizeEmail(enrollment.student.email);
       if (!invitedSet.has(email)) continue;
@@ -56,6 +60,9 @@ export class AdminInvitationStatusService {
 
     for (const attempt of attempts) {
       const email = normalizeEmail(attempt.student.email);
+      // Registered under an email nobody invited — the "wrong email" case.
+      // Deliberately left unlinked; it will correctly surface as its own
+      // not_started row under the invited email instead.
       if (!invitedSet.has(email)) continue;
       const existing = factsByPerson.get(email) ?? {
         isRegisteredWithMatchingEmail: true,
@@ -69,7 +76,7 @@ export class AdminInvitationStatusService {
     );
 
     const sendEvents: SendEvent[] = emailLogs.map((log) => ({
-      personKey:
+      email:
         invitationEmailById.get(log.invitationId) ??
         normalizeEmail(log.invitation.email),
       status: log.status,
@@ -103,18 +110,18 @@ export class AdminInvitationStatusService {
 
     const rowDtos: InvitationStatusRowDto[] = rows
       .map((row) => ({
-        personKey: row.personKey,
-        studentName: studentNameByEmail.get(row.personKey) ?? null,
+        email: row.email,
+        studentName: studentNameByEmail.get(row.email) ?? null,
         status: row.status,
         ...(row.status === InvitationStatus.FAILED
-          ? { emailLogId: failedLogIdByPerson.get(row.personKey) }
+          ? { emailLogId: failedLogIdByPerson.get(row.email) }
           : {}),
       }))
       .sort(
         (left, right) =>
           statusRank.get(left.status)! - statusRank.get(right.status)! ||
-          (left.studentName ?? left.personKey).localeCompare(
-            right.studentName ?? right.personKey,
+          (left.studentName ?? left.email).localeCompare(
+            right.studentName ?? right.email,
           ),
       );
 
