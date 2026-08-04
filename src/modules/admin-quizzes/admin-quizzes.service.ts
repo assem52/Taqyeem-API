@@ -11,6 +11,8 @@ import {
   validateQuiz,
 } from '../questions/validate-quiz';
 import { AdminQuizDto, PublishQuizResponseDto } from './dto/admin-quiz.dto';
+import { CreateAdminQuizDto } from './dto/create-admin-quiz.dto';
+import { QueryAdminQuizDto } from './dto/query-admin-quiz.dto';
 import {
   ATTEMPT_LOCK_MESSAGE,
   UpdateAdminQuizDto,
@@ -34,10 +36,82 @@ export class AdminQuizzesService {
     return this.toAdminQuizDto(quiz, attemptCount);
   }
 
-  /**
-   * Authoritative publish gate: re-load + validate inside a transaction,
-   * then set PUBLISHED. Never trust screen-load validation alone.
-   */
+  async listQuizzes(query: QueryAdminQuizDto): Promise<AdminQuizDto[]> {
+    const where: Prisma.QuizWhereInput = {};
+
+    if (query.status) {
+      where.status = query.status;
+    }
+
+    if (query.search) {
+      const search = query.search.trim();
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const quizzes = await this.prisma.quiz.findMany({
+      where,
+      include: {
+        questions: {
+          include: { options: true },
+          orderBy: { id: 'asc' },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const quizIds = quizzes.map((q) => q.id);
+    const attemptCounts = await this.prisma.attempt.groupBy({
+      by: ['quizId'],
+      where: { quizId: { in: quizIds } },
+      _count: { id: true },
+    });
+
+    const attemptCountMap = new Map<string, number>();
+    for (const group of attemptCounts) {
+      attemptCountMap.set(group.quizId, group._count.id);
+    }
+
+    return quizzes.map((quiz) =>
+      this.toAdminQuizDto(quiz, attemptCountMap.get(quiz.id) ?? 0),
+    );
+  }
+
+  async createQuiz(dto: CreateAdminQuizDto): Promise<AdminQuizDto> {
+    const openDate = new Date(dto.openDate);
+    const closesAt = new Date(dto.closesAt);
+
+    if (isNaN(openDate.getTime()) || isNaN(closesAt.getTime())) {
+      throw new BadRequestException('Invalid openDate or closesAt format');
+    }
+
+    if (openDate >= closesAt) {
+      throw new BadRequestException('openDate must be before closesAt');
+    }
+
+    const created = await this.prisma.quiz.create({
+      data: {
+        title: dto.title,
+        description: dto.description ?? null,
+        duration: dto.duration ?? 60,
+        openDate,
+        closesAt,
+        passScore: dto.passScore != null ? dto.passScore : null,
+        status: QuizStatus.DRAFT,
+      },
+      include: {
+        questions: {
+          include: { options: true },
+          orderBy: { id: 'asc' },
+        },
+      },
+    });
+
+    return this.toAdminQuizDto(created, 0);
+  }
+
   async publishQuiz(quizId: string): Promise<PublishQuizResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const quiz = await tx.quiz.findUnique({
@@ -96,10 +170,35 @@ export class AdminQuizzesService {
     });
   }
 
-  /**
-   * Attempt-aware edit: if any attempt exists (including IN_PROGRESS),
-   * only title and description may change.
-   */
+  async unpublishQuiz(quizId: string): Promise<PublishQuizResponseDto> {
+    const existing = await this.prisma.quiz.findUnique({
+      where: { id: quizId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Quiz not found');
+    }
+
+    if (existing.status === QuizStatus.DRAFT) {
+      return {
+        quizId: existing.id,
+        status: existing.status,
+        message: 'Quiz is already in DRAFT status.',
+      };
+    }
+
+    const updated = await this.prisma.quiz.update({
+      where: { id: quizId },
+      data: { status: QuizStatus.DRAFT },
+    });
+
+    return {
+      quizId: updated.id,
+      status: updated.status,
+      message: 'Quiz reverted to draft status successfully.',
+    };
+  }
+
   async updateQuiz(
     quizId: string,
     dto: UpdateAdminQuizDto,
@@ -156,6 +255,28 @@ export class AdminQuizzesService {
     await this.prisma.quiz.update({ where: { id: quizId }, data });
 
     return this.getQuizForAdmin(quizId);
+  }
+
+  async deleteQuiz(quizId: string): Promise<{ quizId: string; message: string }> {
+    const existing = await this.prisma.quiz.findUnique({
+      where: { id: quizId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Quiz not found');
+    }
+
+    const attemptCount = await this.getAttemptCount(quizId);
+    if (attemptCount > 0) {
+      throw new ForbiddenException(
+        'Cannot delete quiz with existing student attempts.',
+      );
+    }
+
+    await this.prisma.quiz.delete({
+      where: { id: quizId },
+    });
+
+    return { quizId, message: 'Quiz deleted successfully.' };
   }
 
   private async loadQuiz(quizId: string): Promise<QuizWithQuestions> {

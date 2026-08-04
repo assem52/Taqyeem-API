@@ -28,10 +28,14 @@ function createService() {
   const prisma = {
     quiz: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
       update: jest.fn(),
+      delete: jest.fn(),
     },
     attempt: {
       count: jest.fn(),
+      groupBy: jest.fn(),
     },
     $transaction: jest.fn(async (callback: (tx: unknown) => unknown) =>
       callback(prisma),
@@ -45,6 +49,107 @@ function createService() {
 }
 
 describe('AdminQuizzesService', () => {
+  describe('createQuiz', () => {
+    it('creates a draft quiz with duration, active dates, and pass score successfully', async () => {
+      const { service, prisma } = createService();
+      const now = new Date();
+      const future = new Date(now.getTime() + 86400000);
+
+      prisma.quiz.create.mockResolvedValue({
+        id: 'new-quiz-id',
+        title: 'New Math Quiz',
+        description: 'Math basics',
+        duration: 45,
+        openDate: now,
+        closesAt: future,
+        passScore: 75,
+        status: QuizStatus.DRAFT,
+        questions: [],
+      });
+
+      const result = await service.createQuiz({
+        title: 'New Math Quiz',
+        description: 'Math basics',
+        duration: 45,
+        openDate: now.toISOString(),
+        closesAt: future.toISOString(),
+        passScore: 75,
+      });
+
+      expect(result.quizId).toBe('new-quiz-id');
+      expect(result.status).toBe(QuizStatus.DRAFT);
+      expect(result.duration).toBe(45);
+      expect(result.passScore).toBe(75);
+      expect(result.openDate).toBe(now.toISOString());
+      expect(result.closesAt).toBe(future.toISOString());
+    });
+
+    it('rejects creation when openDate is after closesAt', async () => {
+      const { service } = createService();
+      const now = new Date();
+      const past = new Date(now.getTime() - 86400000);
+
+      await expect(
+        service.createQuiz({
+          title: 'Invalid Quiz',
+          openDate: now.toISOString(),
+          closesAt: past.toISOString(),
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('listQuizzes', () => {
+    it('filters quizzes by status and search term', async () => {
+      const { service, prisma } = createService();
+      const now = new Date();
+
+      prisma.quiz.findMany.mockResolvedValue([
+        {
+          id: publishableQuizId,
+          title: 'Calculus Final',
+          description: 'Advanced Math',
+          status: QuizStatus.PUBLISHED,
+          duration: 90,
+          openDate: now,
+          closesAt: now,
+          passScore: 80,
+          questions: [],
+        },
+      ]);
+      prisma.attempt.groupBy.mockResolvedValue([
+        { quizId: publishableQuizId, _count: { id: 3 } },
+      ]);
+
+      const results = await service.listQuizzes({
+        search: 'Calculus',
+        status: QuizStatus.PUBLISHED,
+      });
+
+      expect(prisma.quiz.findMany).toHaveBeenCalledWith({
+        where: {
+          status: QuizStatus.PUBLISHED,
+          OR: [
+            { title: { contains: 'Calculus', mode: 'insensitive' } },
+            { description: { contains: 'Calculus', mode: 'insensitive' } },
+          ],
+        },
+        include: {
+          questions: {
+            include: { options: true },
+            orderBy: { id: 'asc' },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      expect(results.length).toBe(1);
+      expect(results[0].title).toBe('Calculus Final');
+      expect(results[0].attemptCount).toBe(3);
+      expect(results[0].passScore).toBe(80);
+    });
+  });
+
   describe('publishQuiz', () => {
     it('refuses when quiz has no questions', async () => {
       const { service, prisma } = createService();
@@ -101,6 +206,47 @@ describe('AdminQuizzesService', () => {
     });
   });
 
+  describe('unpublishQuiz', () => {
+    it('reverts published quiz back to DRAFT', async () => {
+      const { service, prisma } = createService();
+      prisma.quiz.findUnique.mockResolvedValue({
+        id: publishableQuizId,
+        status: QuizStatus.PUBLISHED,
+      });
+      prisma.quiz.update.mockResolvedValue({
+        id: publishableQuizId,
+        status: QuizStatus.DRAFT,
+      });
+
+      const res = await service.unpublishQuiz(publishableQuizId);
+      expect(res.status).toBe(QuizStatus.DRAFT);
+      expect(res.message).toBe('Quiz reverted to draft status successfully.');
+    });
+  });
+
+  describe('deleteQuiz', () => {
+    it('deletes quiz if no attempts exist', async () => {
+      const { service, prisma } = createService();
+      prisma.quiz.findUnique.mockResolvedValue({ id: 'q-del' });
+      prisma.attempt.count.mockResolvedValue(0);
+      prisma.quiz.delete.mockResolvedValue({ id: 'q-del' });
+
+      const result = await service.deleteQuiz('q-del');
+      expect(result.quizId).toBe('q-del');
+      expect(result.message).toBe('Quiz deleted successfully.');
+    });
+
+    it('prevents deletion if attempts exist', async () => {
+      const { service, prisma } = createService();
+      prisma.quiz.findUnique.mockResolvedValue({ id: lockedQuizId });
+      prisma.attempt.count.mockResolvedValue(2);
+
+      await expect(service.deleteQuiz(lockedQuizId)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+  });
+
   describe('updateQuiz', () => {
     it('blocks structural edits when attempts exist', async () => {
       const { service, prisma } = createService();
@@ -113,6 +259,41 @@ describe('AdminQuizzesService', () => {
       await expect(
         service.updateQuiz(lockedQuizId, { duration: 90 }),
       ).rejects.toThrow(ATTEMPT_LOCK_MESSAGE);
+    });
+
+    it('allows full structural edits (duration, dates, pass score) when zero attempts exist', async () => {
+      const { service, prisma } = createService();
+      const now = new Date();
+      const nextWeek = new Date(now.getTime() + 7 * 86400000);
+
+      prisma.attempt.count.mockResolvedValue(0);
+      prisma.quiz.findUnique.mockResolvedValue({ id: 'unlocked-q' });
+      prisma.quiz.update.mockResolvedValue({ id: 'unlocked-q' });
+
+      prisma.quiz.findUnique.mockResolvedValueOnce({ id: 'unlocked-q' }).mockResolvedValueOnce({
+        id: 'unlocked-q',
+        title: 'Updated Quiz',
+        description: 'New Description',
+        status: QuizStatus.DRAFT,
+        openDate: now,
+        closesAt: nextWeek,
+        duration: 120,
+        passScore: 85,
+        questions: [validQuestion],
+      });
+
+      const result = await service.updateQuiz('unlocked-q', {
+        title: 'Updated Quiz',
+        duration: 120,
+        openDate: now.toISOString(),
+        closesAt: nextWeek.toISOString(),
+        passScore: 85,
+      });
+
+      expect(result.duration).toBe(120);
+      expect(result.passScore).toBe(85);
+      expect(result.openDate).toBe(now.toISOString());
+      expect(result.closesAt).toBe(nextWeek.toISOString());
     });
 
     it('allows title edits when attempts exist', async () => {
