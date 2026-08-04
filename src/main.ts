@@ -2,9 +2,9 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { assertNoMockAuthInProduction } from './common/assert-safe-env';
-
+import { assertNoMockAuthInProduction } from './assert-safe-env';
 async function bootstrap() {
+    assertNoMockAuthInProduction();
   const app = await NestFactory.create(AppModule);
 
   const configService = app.get(ConfigService);

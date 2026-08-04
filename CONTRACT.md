@@ -65,3 +65,22 @@ this PR adds, not bypass it.
 Assumes single-select per question (`selectedOptionId` is one value, not an
 array). If multi-select MCQs are ever needed, this shape has to change to an
 array, and scoring logic changes with it.
+
+
+
+
+## Backend Analytics Handover (To Slot 5)
+The Analytics endpoints for Quizzes and Questions have been successfully implemented on the backend. They provide the following calculated metrics ready for direct consumption:
+
+- **Quiz Analytics (`QuizAnalyticsDto`):**
+  - `invitedCount`: Total number of invited learners.
+  - `startedCount`: Total number of learners who started the quiz.
+  - `submittedCount`: Total number of learners who submitted the quiz.
+  - `completionRate`: Percentage of completion.
+  - `averageScore`: Average score achieved.
+  - `passRate`: Percentage of passing learners.
+
+- **Question Analytics:**
+  - Automatically calculates correct, wrong, and skipped counts per question, determines difficulty levels (`Hard`, `Easy`, `Normal`), and includes an `adminNote` for potential bad questions.
+
+*Note for Slot 5: These calculations and aggregations are fully handled on the backend. Frontend does not need to re-calculate them.*
