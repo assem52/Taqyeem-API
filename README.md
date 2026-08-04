@@ -120,3 +120,9 @@ Code: `src/modules/student-quizzes/`
 | `npm run start:prod` | Run compiled `dist/` |
 | `npm run test` | Unit tests |
 | `npm run lint` | ESLint |
+
+---
+
+### Latest Updates (Analytics Module)
+- Implemented `QuizAnalytics` and `QuestionAnalytics` services and controllers.
+- Backend now automatically calculates metrics like completion rates, scores, and question difficulties.
