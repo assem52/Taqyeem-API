@@ -6,45 +6,43 @@ export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getQuizAnalytics(quizId: string) {
-    
     const quiz = await this.prisma.quiz.findUnique({
       where: { id: quizId },
-      include: { attempts: true },
+    });
+    
+    const passScore = quiz?.passScore ?? 50;
+
+    const attempts = await this.prisma.attempt.findMany({
+      where: { quizId },
     });
 
-    if (!quiz) {
-      return {
-        quizId,
-        invitedCount: 0,
-        startedCount: 0,
-        submittedCount: 0,
-        completionRate: 0,
-        averageScore: 0,
-        passRate: 0,
-        message: 'No analytics found: Quiz does not exist.',
-      };
-    }
+    const invitedCount = await this.prisma.enrollment.count({
+      where: { quizId },
+    });
 
-    const attempts = quiz.attempts || [];
-    const startedCount = attempts.filter((a) => a.status === 'STARTED' || a.status === 'SUBMITTED').length;
-    const submittedCount = attempts.filter((a) => a.status === 'SUBMITTED').length;
-    const invitedCount = attempts.length; // أو استبدالها بجدول الـ Enrollments لو موجود
+    const startedCount = attempts.length;
 
-    const totalScores = attempts.reduce((acc, curr) => acc + (curr.score || 0), 0);
-    const averageScore = submittedCount > 0 ? totalScores / submittedCount : 0;
+    const TERMINAL = new Set(['SUBMITTED', 'AUTO_SUBMITTED']);
+    const terminalAttempts = attempts.filter(a => TERMINAL.has(a.status));
+    const submittedCount = terminalAttempts.length;
 
-    const passedCount = attempts.filter((a) => (a.score || 0) >= (quiz.passScore || 50)).length;
+    const passedAttempts = terminalAttempts.filter(a => Number(a.score ?? 0) >= Number(passScore));
+    const passedCount = passedAttempts.length;
+
     const passRate = submittedCount > 0 ? (passedCount / submittedCount) * 100 : 0;
     const completionRate = invitedCount > 0 ? (submittedCount / invitedCount) * 100 : 0;
 
+    const totalScore = terminalAttempts.reduce((sum, a) => sum + Number(a.score || 0), 0);
+    const averageScore = submittedCount > 0 ? totalScore / submittedCount : 0;
+
     return {
-      quizId,
       invitedCount,
       startedCount,
       submittedCount,
+      passedCount,
+      passRate: Number(passRate.toFixed(2)),
       completionRate: Number(completionRate.toFixed(2)),
       averageScore: Number(averageScore.toFixed(2)),
-      passRate: Number(passRate.toFixed(2)),
     };
   }
 }

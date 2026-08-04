@@ -1,17 +1,16 @@
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
 import { QuestionAnalyticsService } from './question-analytics.service';
-import { UseGuards } from '@nestjs/common';
-import { RolesGuard } from '../common/guards/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator';
+import { RolesGuard } from './../common/prisma/guards/roles.guard';
+import { Roles } from './../common/prisma/decorators/roles.decorator';
 
 @UseGuards(RolesGuard)
 @Roles('ADMIN')
-@Controller('analytics/questions')
+@Controller('question-analytics')
 export class QuestionAnalyticsController {
   constructor(private readonly questionAnalyticsService: QuestionAnalyticsService) {}
 
-  @Get(':quizId')
-  async getInsights(@Param('quizId') quizId: string) {
+  @Get('quiz/:quizId')
+  async getQuestionAnalytics(@Param('quizId') quizId: string) {
     return this.questionAnalyticsService.getQuestionAnalytics(quizId);
   }
 }
