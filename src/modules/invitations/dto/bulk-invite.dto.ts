@@ -1,8 +1,9 @@
-import { ArrayNotEmpty, IsArray, IsEmail, IsString } from 'class-validator';
+import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsString } from 'class-validator';
 
 export class BulkInviteDto {
   @IsArray()
   @ArrayNotEmpty()
+  @ArrayMaxSize(500, { message: 'Maximum 500 recipients per batch.' })
   @IsString({ each: true })
   emails: string[];
 }
