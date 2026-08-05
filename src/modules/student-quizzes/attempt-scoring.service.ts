@@ -149,10 +149,33 @@ export class AttemptScoringService {
     return { autoSubmittedCount };
   }
 
-  async saveAnswer(attemptId: string, questionId: string, selectedOptionId: string | null): Promise<void> {
-    const attempt = await this.prisma.attempt.findUnique({ where: { id: attemptId } });
-    if (!attempt) throw new NotFoundException('Attempt not found');
-    if (attempt.status === 'SUBMITTED') {
+  async saveAnswer(
+    attemptId: string,
+    studentId: string,
+    questionId: string,
+    selectedOptionId: string | null,
+  ): Promise<void> {
+    const entry = JSON.stringify({ selectedOptionId, answeredAt: new Date().toISOString() });
+
+    const affected = await this.prisma.$executeRaw`
+      UPDATE "Attempt"
+      SET "attemptAnswers" = jsonb_set(
+        COALESCE("attemptAnswers", '{}'::jsonb),
+        ARRAY[${questionId}]::text[],
+        ${entry}::jsonb,
+        true
+      )
+      WHERE id = ${attemptId}::uuid AND "studentId" = ${studentId}::uuid AND status = 'IN_PROGRESS'::"AttemptStatus"
+    `;
+
+    if (affected === 0) {
+      const attempt = await this.prisma.attempt.findUnique({ where: { id: attemptId } });
+      if (attempt && attempt.studentId !== studentId) {
+        throw new ForbiddenException('Not authorized to access this attempt');
+      }
+      if (!attempt) {
+        throw new NotFoundException('Attempt not found');
+      }
       throw new ConflictException('Cannot change answers after submission');
     }
 
@@ -163,7 +186,7 @@ export class AttemptScoringService {
     });
   }
 
-  async submitAttempt(attemptId: string): Promise<ScoreResult> {
+  async submitAttempt(attemptId: string, studentId: string): Promise<ScoreResult> {
     let result: SubmitResult;
     try {
       result = await this.prisma.$transaction(
@@ -171,13 +194,13 @@ export class AttemptScoringService {
           const claimed = await tx.$executeRaw`
             UPDATE "Attempt"
             SET status = 'SUBMITTED'::"AttemptStatus", "submittedAt" = NOW()
-            WHERE id = ${attemptId}::uuid AND status = 'IN_PROGRESS'::"AttemptStatus"
+            WHERE id = ${attemptId}::uuid AND "studentId" = ${studentId}::uuid AND status = 'IN_PROGRESS'::"AttemptStatus"
           `;
 
           if (claimed === 0) {
-            return this.readAlreadySubmitted(tx, attemptId);
+            return this.readAlreadySubmitted(tx, attemptId, studentId);
           }
-          return this.scoreAndPersist(tx, attemptId);
+          return this.scoreAndPersist(tx, attemptId, studentId);
         },
         { timeout: 10_000, maxWait: 5_000 },
       );
@@ -211,12 +234,19 @@ export class AttemptScoringService {
     );
   }
 
-  private async scoreAndPersist(tx: Prisma.TransactionClient, attemptId: string): Promise<SubmitResult> {
+  private async scoreAndPersist(
+    tx: Prisma.TransactionClient,
+    attemptId: string,
+    studentId?: string,
+  ): Promise<SubmitResult> {
     const attempt = await tx.attempt.findUnique({
       where: { id: attemptId },
       include: { quiz: true },
     });
     if (!attempt) throw new NotFoundException('Attempt not found');
+    if (studentId !== undefined && attempt.studentId !== studentId) {
+      throw new ForbiddenException('Not authorized');
+    }
 
     const questions = await tx.question.findMany({
       where: { quizId: attempt.quizId },
@@ -250,12 +280,17 @@ export class AttemptScoringService {
     return { score, freshlyScored: true, studentId: attempt.studentId, quizId: attempt.quizId };
   }
 
-  private async readAlreadySubmitted(tx: Prisma.TransactionClient, attemptId: string): Promise<SubmitResult> {
+  private async readAlreadySubmitted(
+    tx: Prisma.TransactionClient,
+    attemptId: string,
+    studentId: string,
+  ): Promise<SubmitResult> {
     const existing = await tx.attempt.findUnique({
       where: { id: attemptId },
       include: { quiz: true },
     });
     if (!existing) throw new NotFoundException('Attempt not found');
+    if (existing.studentId !== studentId) throw new ForbiddenException('Not authorized');
 
     if (!existing.questionSnapshot) {
       throw new ConflictException(

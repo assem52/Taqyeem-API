@@ -4,6 +4,7 @@ import {
   Get,
   Headers,
   Param,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { StudentQuizzesService } from './student-quizzes.service';
 
@@ -17,7 +18,7 @@ export class StudentQuizzesController {
     // x-student-id + MOCK_STUDENT_ID is a dev-only shim — not production auth.
     const resolvedStudentId = studentId ?? process.env.MOCK_STUDENT_ID;
     if (!resolvedStudentId) {
-      throw new BadRequestException(
+      throw new UnauthorizedException(
         'Missing student id. Send x-student-id header or set MOCK_STUDENT_ID.',
       );
     }
@@ -33,7 +34,7 @@ export class StudentQuizzesController {
   ) {
     const resolvedStudentId = studentId ?? process.env.MOCK_STUDENT_ID;
     if (!resolvedStudentId) {
-      throw new BadRequestException(
+      throw new UnauthorizedException(
         'Missing student id. Send x-student-id header or set MOCK_STUDENT_ID.',
       );
     }

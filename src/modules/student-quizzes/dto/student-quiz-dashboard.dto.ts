@@ -6,11 +6,12 @@ export class StudentQuizDashboardDtoItem {
   quizId!: string;
   title!: string;
   description!: string;
+  instructions?: string | null;
   durationMinutes!: number;
   opensAt!: string;
   closesAt!: string;
   studentState!: StudentQuizState;
-  score!: number | null;
+  score?: number | null;
   canStart!: boolean;
   blockedReason?: string;
 }
