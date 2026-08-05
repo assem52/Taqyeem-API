@@ -1,5 +1,6 @@
 // src/app.module.ts
 import { Module } from '@nestjs/common';
+import { QuestionsModule } from './modules/questions/questions.module';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
@@ -31,6 +32,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     IntegrityModule,
     InvitationsModule,
     AnalyticsModule,
+    QuestionsModule,
   ],
   controllers:[],
   providers:[],
