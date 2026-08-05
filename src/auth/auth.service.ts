@@ -1,36 +1,41 @@
-import { Injectable, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import {
+  Injectable,UnauthorizedException,BadRequestException,NotFoundException,Logger,} from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service.js';
+import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
-import * as bcrypt from 'bcrypt';
-import * as crypto from 'crypto';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
   ) {}
 
   async register(dto: RegisterDto) {
-    const { email, password, name } = dto;
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
 
-    const existingUser = await this.prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      return { message: 'If this email can be registered, you will receive a confirmation.' };
+      throw new BadRequestException('Email is already in use.');
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(dto.password, 10);
     const verificationToken = crypto.randomBytes(32).toString('hex');
-    const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours expiration
+    const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    await this.prisma.user.create({
+    const user = await this.prisma.user.create({
       data: {
-        email,
+        name: dto.name,
+        email: dto.email,
         password: hashedPassword,
-        name,
         role: 'STUDENT',
         status: 'UNVERIFIED',
         verificationToken,
@@ -38,33 +43,63 @@ export class AuthService {
       },
     });
 
-    console.log(`Verification Link: /auth/verify?email=${email}&token=${verificationToken}`);
+    if (process.env.NODE_ENV !== 'production') {
+      this.logger.debug(
+        `[DEV] Verification link for ${user.email}: /auth/verify?token=${verificationToken}`,
+      );
+    }
 
-    return { message: 'Registration successful. Please check your email to verify your account.' };
+    return {
+      message: 'Registration successful. Please verify your email.',
+      email: user.email,
+    };
+  }
+
+  async login(dto: LoginDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid email or password.');
+    }
+
+    const isPasswordValid = await bcrypt.compare(dto.password, user.password);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid email or password.');
+    }
+
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    const accessToken = this.jwtService.sign(payload);
+
+    return {
+      access_token: accessToken,
+      status: user.status,
+      message:
+        user.status === 'UNVERIFIED'
+          ? 'Your account is unverified. Please verify your email to access quizzes.'
+          : 'Login successful.',
+    };
   }
 
   async verifyEmail(dto: VerifyEmailDto) {
-    const { email, token } = dto;
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: dto.email,
+        verificationToken: dto.token,
+      },
+    });
 
-    const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    if (user.status === 'VERIFIED') {
-      return { message: 'Email is already verified.' };
-    }
-
-    if (user.verificationToken !== token) {
-      throw new BadRequestException('Invalid verification token');
+      throw new BadRequestException('Invalid verification token or email.');
     }
 
     if (user.tokenExpiresAt && new Date() > user.tokenExpiresAt) {
-      throw new BadRequestException('Verification token has expired');
+      throw new BadRequestException('Verification token has expired.');
     }
 
     await this.prisma.user.update({
-      where: { email },
+      where: { id: user.id },
       data: {
         status: 'VERIFIED',
         verificationToken: null,
@@ -72,55 +107,41 @@ export class AuthService {
       },
     });
 
-    return { message: 'Email successfully verified. You can now take quizzes.' };
+    return { message: 'Email verified successfully.' };
   }
 
-  async resendVerification(email: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+  async resendVerification(dto: ResendVerificationDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
 
-    if (user.status === 'VERIFIED') {
-      return { message: 'Email is already verified.' };
+    if (!user || user.status === 'VERIFIED') {
+      return {
+        message:
+          'If that account exists and needs verification, a new link has been sent.',
+      };
     }
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     await this.prisma.user.update({
-      where: { email },
+      where: { id: user.id },
       data: {
         verificationToken,
         tokenExpiresAt,
       },
     });
 
-    console.log(`Resend Verification Link: /auth/verify?email=${email}&token=${verificationToken}`);
-
-    return { message: 'Verification email resent successfully.' };
-  }
-
-  async login(dto: LoginDto) {
-    const { email, password } = dto;
-
-    const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      throw new UnauthorizedException('Invalid email or password');
+    if (process.env.NODE_ENV !== 'production') {
+      this.logger.debug(
+        `[DEV] New verification link for ${dto.email}: /auth/verify?token=${verificationToken}`,
+      );
     }
-
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid email or password');
-    }
-
-    const payload = { sub: user.id, email: user.email, role: user.role, status: user.status };
-    const access_token = this.jwtService.sign(payload);
 
     return {
-      access_token,
-      status: user.status,
-      message: user.status === 'UNVERIFIED' ? 'Account is unverified. You cannot take quizzes until verified.' : 'Login successful',
+      message:
+        'If that account exists and needs verification, a new link has been sent.',
     };
   }
 }
