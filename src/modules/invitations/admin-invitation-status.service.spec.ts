@@ -13,7 +13,7 @@ function createService() {
     emailLog: { findMany: jest.fn() },
   };
 
-  return { service: new AdminInvitationStatusService(prisma as never), prisma };
+  return { service: new AdminInvitationStatusService(prisma as never, {} as never), prisma };
 }
 
 describe('AdminInvitationStatusService', () => {

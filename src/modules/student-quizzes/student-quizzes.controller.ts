@@ -25,6 +25,20 @@ export class StudentQuizzesController {
     return this.studentQuizzesService.getDashboard(resolvedStudentId);
   }
 
+  @Get(':quizId/attempt')
+  getAttempt(
+    @Param('quizId') quizId: string,
+    @Headers('x-student-id') studentId?: string,
+  ) {
+    const resolvedStudentId = studentId ?? process.env.MOCK_STUDENT_ID;
+    if (!resolvedStudentId) {
+      throw new BadRequestException(
+        'Missing student id. Send x-student-id header or set MOCK_STUDENT_ID.',
+      );
+    }
+    return this.studentQuizzesService.getAttempt(resolvedStudentId, quizId);
+  }
+
   // Deep-link access check: a student opening a direct link to one quiz,
   // as opposed to browsing the dashboard list.
   @Get(':quizId')
@@ -41,3 +55,4 @@ export class StudentQuizzesController {
     return this.studentQuizzesService.getQuizAccess(resolvedStudentId, quizId);
   }
 }
+
