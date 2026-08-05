@@ -62,13 +62,18 @@ model Quiz {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      Role     @default(STUDENT)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                    String        @id @default(cuid())
+  name                  String
+  email                 String        @unique
+  password              String
+  role                  Role          @default(STUDENT)
+  status                StudentStatus @default(UNVERIFIED)
+  verificationToken     String?       @map("verification_token")
+  tokenExpiresAt        DateTime?     @map("token_expires_at")
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@map("users")
 }
 
 enum Role {
