@@ -48,6 +48,7 @@ model Quiz {
   id                 String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   title              String
   description        String?
+  instructions       String?
   createdAt          DateTime     @default(now()) @map("created_at")
   openDate           DateTime     @default(now()) @map("open_date")
   duration           Int          @default(60)

@@ -59,11 +59,12 @@ export class StudentQuizzesService {
           quizId: quiz.id,
           title: quiz.title,
           description: quiz.description ?? '',
+          instructions: quiz.instructions,
           durationMinutes: quiz.duration,
           opensAt: quiz.openDate.toISOString(),
           closesAt: quiz.closesAt.toISOString(),
-          studentState,
           score: attempt?.score != null ? Number(attempt.score) : null,
+          studentState,
           canStart,
           blockedReason,
         };
@@ -127,13 +128,61 @@ export class StudentQuizzesService {
       quizId: quiz.id,
       title: quiz.title,
       description: quiz.description ?? '',
+      instructions: quiz.instructions,
       durationMinutes: quiz.duration,
       opensAt: quiz.openDate.toISOString(),
       closesAt: quiz.closesAt.toISOString(),
-      studentState,
       score: attempt?.score != null ? Number(attempt.score) : null,
+      studentState,
       canStart,
       blockedReason,
     };
   }
+
+  async getAttempt(studentId: string, quizId: string) {
+    const student = await this.prisma.student.findUnique({
+      where: { id: studentId },
+    });
+    if (!student) {
+      throw new NotFoundException('Student not found');
+    }
+
+    const attempt = await this.prisma.attempt.findUnique({
+      where: { quizId_studentId: { quizId, studentId } },
+    });
+
+    if (!attempt) {
+      throw new NotFoundException('Attempt not found');
+    }
+
+    const questions = await this.prisma.question.findMany({
+      where: { quizId, isHidden: false },
+      include: {
+        options: {
+          select: {
+            id: true,
+            option: true,
+          },
+        },
+      },
+    });
+
+    return {
+      id: attempt.id,
+      quizId: attempt.quizId,
+      studentId: attempt.studentId,
+      status: attempt.status,
+      startedAt: attempt.startedAt,
+      submittedAt: attempt.submittedAt,
+      score: attempt.score != null ? Number(attempt.score) : null,
+      attemptAnswers: attempt.attemptAnswers ?? {},
+      questions: questions.map((q) => ({
+        id: q.id,
+        text: q.text,
+        type: q.type,
+        options: q.options,
+      })),
+    };
+  }
 }
+
