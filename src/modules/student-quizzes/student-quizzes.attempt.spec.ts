@@ -89,7 +89,7 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
       );
     });
 
-    it('never exposes another student\'s attempt (Student B gets 404 when querying Quiz where only Student A has an attempt)', async () => {
+    it("never exposes another student's attempt (Student B gets 404 when querying Quiz where only Student A has an attempt)", async () => {
       prismaMock.student.findUnique.mockImplementation(({ where }: any) => {
         return Promise.resolve({ id: where.id });
       });
@@ -147,6 +147,41 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
       expect(res.attemptAnswers).toEqual({ q1: { selectedOptionId: 'opt-1' } });
       expect(res.questions).toHaveLength(1);
       expect(res.questions[0].options[0]).not.toHaveProperty('isCorrect');
+    });
+
+    it('resumes from the immutable snapshot without reading live questions', async () => {
+      prismaMock.student.findUnique.mockResolvedValue({ id: studentIdA });
+      prismaMock.attempt.findUnique.mockResolvedValue({
+        id: attemptId,
+        quizId,
+        studentId: studentIdA,
+        status: 'IN_PROGRESS',
+        startedAt: new Date(),
+        submittedAt: null,
+        score: null,
+        attemptAnswers: {},
+        questionSnapshot: [
+          {
+            questionId: 'q-snapshot',
+            text: 'Historical text',
+            type: 'MCQ',
+            points: 1,
+            options: [
+              {
+                id: 'o-snapshot',
+                option: 'Historical option',
+                isCorrect: true,
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await service.getAttempt(studentIdA, quizId);
+
+      expect(result.questions[0].text).toBe('Historical text');
+      expect(result.questions[0].options[0]).not.toHaveProperty('isCorrect');
+      expect(prismaMock.question.findMany).not.toHaveBeenCalled();
     });
   });
 });

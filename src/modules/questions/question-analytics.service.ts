@@ -10,9 +10,13 @@ export class QuestionAnalyticsService {
       where: { id: quizId },
       include: {
         questions: {
+          where: { deletedAt: null },
           include: {
-            options: true,
+            options: {
+              orderBy: [{ position: 'asc' }, { id: 'asc' }],
+            },
           },
+          orderBy: [{ position: 'asc' }, { id: 'asc' }],
         },
       },
     });
@@ -30,7 +34,8 @@ export class QuestionAnalyticsService {
     if (totalAttempts === 0) {
       return {
         quizId,
-        message: 'No student attempts have been recorded for this assessment yet. Once submissions roll in, actionable question metrics will appear here to help refine the quiz design.',
+        message:
+          'No student attempts have been recorded for this assessment yet. Once submissions roll in, actionable question metrics will appear here to help refine the quiz design.',
         analytics: [],
       };
     }
@@ -43,16 +48,23 @@ export class QuestionAnalyticsService {
 
       attempts.forEach((attempt) => {
         const attemptAnswers = Array.isArray(attempt.attemptAnswers)
-          ? (attempt.attemptAnswers as Array<{ questionId: string; selectedOptionId?: string | null }>)
+          ? (attempt.attemptAnswers as Array<{
+              questionId: string;
+              selectedOptionId?: string | null;
+            }>)
           : [];
 
-        const studentAnswer = attemptAnswers.find((a) => a.questionId === question.id);
+        const studentAnswer = attemptAnswers.find(
+          (a) => a.questionId === question.id,
+        );
         const selectedOptionId = studentAnswer?.selectedOptionId ?? null;
 
         if (!studentAnswer || selectedOptionId === null) {
           skippedCount++;
         } else {
-          const selectedOpt = question.options.find((o) => o.id === selectedOptionId);
+          const selectedOpt = question.options.find(
+            (o) => o.id === selectedOptionId,
+          );
           if (selectedOpt && selectedOpt.isCorrect) {
             correctCount++;
           } else {
@@ -62,9 +74,12 @@ export class QuestionAnalyticsService {
       });
 
       const answeredTotal = correctCount + wrongCount;
-      const correctRate = answeredTotal > 0 ? (correctCount / answeredTotal) * 100 : 0;
-      const wrongRate = answeredTotal > 0 ? (wrongCount / answeredTotal) * 100 : 0;
-      const skipRate = totalAttempts > 0 ? (skippedCount / totalAttempts) * 100 : 0;
+      const correctRate =
+        answeredTotal > 0 ? (correctCount / answeredTotal) * 100 : 0;
+      const wrongRate =
+        answeredTotal > 0 ? (wrongCount / answeredTotal) * 100 : 0;
+      const skipRate =
+        totalAttempts > 0 ? (skippedCount / totalAttempts) * 100 : 0;
 
       let difficultyLabel = 'Moderate';
       let adminNote = '';
@@ -106,7 +121,7 @@ export class QuestionAnalyticsService {
     return {
       quizId,
       totalAttempts,
-      hardestQuestionsHighlight: sortedByDifficulty.slice(0, 3), 
+      hardestQuestionsHighlight: sortedByDifficulty.slice(0, 3),
       questionAnalyticsTable: questionMetrics,
     };
   }

@@ -8,7 +8,12 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ScoreEventsService } from './events/score-events.service';
-import { AttemptAnswers, computeScore, QuestionSnapshotItem, ScoreResult } from './scoring';
+import {
+  AttemptAnswers,
+  computeScore,
+  QuestionSnapshotItem,
+  ScoreResult,
+} from './scoring';
 import { deriveStudentState, resolveAccess } from './student-quiz-state';
 
 interface SubmitResult {
@@ -30,13 +35,29 @@ export class AttemptScoringService {
     private readonly events: ScoreEventsService,
   ) {}
 
-  async startAttempt(studentId: string, quizId: string): Promise<StartAttemptResult> {
-    const student = await this.prisma.student.findUnique({ where: { id: studentId } });
+  async startAttempt(
+    studentId: string,
+    quizId: string,
+  ): Promise<StartAttemptResult> {
+    const student = await this.prisma.student.findUnique({
+      where: { id: studentId },
+    });
     if (!student) {
       throw new NotFoundException('Student not found');
     }
 
-    const quiz = await this.prisma.quiz.findUnique({ where: { id: quizId } });
+    const quiz = await this.prisma.quiz.findUnique({
+      where: { id: quizId },
+      include: {
+        questions: {
+          where: { deletedAt: null, isHidden: false },
+          include: {
+            options: { orderBy: [{ position: 'asc' }, { id: 'asc' }] },
+          },
+          orderBy: [{ position: 'asc' }, { id: 'asc' }],
+        },
+      },
+    });
     if (!quiz || quiz.status !== 'PUBLISHED') {
       throw new NotFoundException('This quiz link is invalid.');
     }
@@ -59,7 +80,12 @@ export class AttemptScoringService {
     }
 
     const now = new Date();
-    const studentState = deriveStudentState(undefined, quiz.openDate, quiz.closesAt, now);
+    const studentState = deriveStudentState(
+      undefined,
+      quiz.openDate,
+      quiz.closesAt,
+      now,
+    );
     const { canStart, blockedReason } = resolveAccess(
       student.status,
       studentState,
@@ -67,16 +93,44 @@ export class AttemptScoringService {
       quiz.closesAt,
     );
     if (!canStart) {
-      throw new ForbiddenException(blockedReason ?? 'This quiz cannot be started right now.');
+      throw new ForbiddenException(
+        blockedReason ?? 'This quiz cannot be started right now.',
+      );
     }
+
+    const questionSnapshot: QuestionSnapshotItem[] = (quiz.questions ?? []).map(
+      (question) => ({
+        questionId: question.id,
+        text: question.text,
+        type: question.type,
+        points: question.points.toNumber(),
+        position: question.position,
+        options: question.options.map((option) => ({
+          id: option.id,
+          option: option.option,
+          isCorrect: option.isCorrect,
+          position: option.position,
+        })),
+      }),
+    );
 
     try {
       const attempt = await this.prisma.attempt.create({
-        data: { studentId, quizId, status: 'IN_PROGRESS', startedAt: now },
+        data: {
+          studentId,
+          quizId,
+          status: 'IN_PROGRESS',
+          startedAt: now,
+          questionSnapshot:
+            questionSnapshot as unknown as Prisma.InputJsonValue,
+        },
       });
       return { attemptId: attempt.id, status: 'IN_PROGRESS' };
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
         // Lost the race to create this attempt — the other caller's row
         // already exists; return it rather than surfacing a raw 500.
         const winner = await this.prisma.attempt.findUnique({
@@ -94,7 +148,7 @@ export class AttemptScoringService {
     let result: SubmitResult | null;
     try {
       result = await this.prisma.$transaction(
-        async tx => {
+        async (tx) => {
           const claimed = await tx.$executeRaw`
             UPDATE "Attempt" a
             SET status = 'AUTO_SUBMITTED'::"AttemptStatus", "submittedAt" = NOW()
@@ -135,7 +189,9 @@ export class AttemptScoringService {
     return result.score;
   }
 
-  async sweepExpiredAttemptsForQuiz(quizId: string): Promise<{ autoSubmittedCount: number }> {
+  async sweepExpiredAttemptsForQuiz(
+    quizId: string,
+  ): Promise<{ autoSubmittedCount: number }> {
     const candidates = await this.prisma.attempt.findMany({
       where: { quizId, status: 'IN_PROGRESS' },
     });
@@ -155,7 +211,10 @@ export class AttemptScoringService {
     questionId: string,
     selectedOptionId: string | null,
   ): Promise<void> {
-    const entry = JSON.stringify({ selectedOptionId, answeredAt: new Date().toISOString() });
+    const entry = JSON.stringify({
+      selectedOptionId,
+      answeredAt: new Date().toISOString(),
+    });
 
     const affected = await this.prisma.$executeRaw`
       UPDATE "Attempt"
@@ -169,7 +228,9 @@ export class AttemptScoringService {
     `;
 
     if (affected === 0) {
-      const attempt = await this.prisma.attempt.findUnique({ where: { id: attemptId } });
+      const attempt = await this.prisma.attempt.findUnique({
+        where: { id: attemptId },
+      });
       if (attempt && attempt.studentId !== studentId) {
         throw new ForbiddenException('Not authorized to access this attempt');
       }
@@ -181,16 +242,24 @@ export class AttemptScoringService {
 
     await this.prisma.answer.upsert({
       where: { attemptId_questionId: { attemptId, questionId } },
-      create: { attemptId, questionId, selectedOptionId, answeredAt: new Date() },
+      create: {
+        attemptId,
+        questionId,
+        selectedOptionId,
+        answeredAt: new Date(),
+      },
       update: { selectedOptionId, answeredAt: new Date() },
     });
   }
 
-  async submitAttempt(attemptId: string, studentId: string): Promise<ScoreResult> {
+  async submitAttempt(
+    attemptId: string,
+    studentId: string,
+  ): Promise<ScoreResult> {
     let result: SubmitResult;
     try {
       result = await this.prisma.$transaction(
-        async tx => {
+        async (tx) => {
           const claimed = await tx.$executeRaw`
             UPDATE "Attempt"
             SET status = 'SUBMITTED'::"AttemptStatus", "submittedAt" = NOW()
@@ -248,21 +317,17 @@ export class AttemptScoringService {
       throw new ForbiddenException('Not authorized');
     }
 
-    const questions = await tx.question.findMany({
-      where: { quizId: attempt.quizId },
-      include: { options: true },
-    });
-
-    const questionSnapshot: QuestionSnapshotItem[] = questions.map(q => ({
-      questionId: q.id,
-      text: q.text,
-      type: q.type,
-      points: q.points.toNumber(),
-      options: q.options.map(o => ({ id: o.id, option: o.option, isCorrect: o.isCorrect })),
-    }));
+    if (!attempt.questionSnapshot) {
+      throw new ConflictException(
+        'Attempt has no start snapshot and cannot be scored safely.',
+      );
+    }
+    const questionSnapshot =
+      attempt.questionSnapshot as unknown as QuestionSnapshotItem[];
 
     const answers = (attempt.attemptAnswers ?? {}) as unknown as AttemptAnswers;
-    const passScorePercentage = attempt.quiz.passScore != null ? attempt.quiz.passScore.toNumber() : null;
+    const passScorePercentage =
+      attempt.quiz.passScore != null ? attempt.quiz.passScore.toNumber() : null;
 
     const score = computeScore(questionSnapshot, answers, {
       passScorePercentage,
@@ -272,12 +337,16 @@ export class AttemptScoringService {
     await tx.attempt.update({
       where: { id: attemptId },
       data: {
-        questionSnapshot: questionSnapshot as any,
         score: score.percentage,
       },
     });
 
-    return { score, freshlyScored: true, studentId: attempt.studentId, quizId: attempt.quizId };
+    return {
+      score,
+      freshlyScored: true,
+      studentId: attempt.studentId,
+      quizId: attempt.quizId,
+    };
   }
 
   private async readAlreadySubmitted(
@@ -290,7 +359,8 @@ export class AttemptScoringService {
       include: { quiz: true },
     });
     if (!existing) throw new NotFoundException('Attempt not found');
-    if (existing.studentId !== studentId) throw new ForbiddenException('Not authorized');
+    if (existing.studentId !== studentId)
+      throw new ForbiddenException('Not authorized');
 
     if (!existing.questionSnapshot) {
       throw new ConflictException(
@@ -298,15 +368,25 @@ export class AttemptScoringService {
       );
     }
 
-    const questionSnapshot = existing.questionSnapshot as unknown as QuestionSnapshotItem[];
-    const answers = (existing.attemptAnswers ?? {}) as unknown as AttemptAnswers;
-    const passScorePercentage = existing.quiz.passScore != null ? existing.quiz.passScore.toNumber() : null;
+    const questionSnapshot =
+      existing.questionSnapshot as unknown as QuestionSnapshotItem[];
+    const answers = (existing.attemptAnswers ??
+      {}) as unknown as AttemptAnswers;
+    const passScorePercentage =
+      existing.quiz.passScore != null
+        ? existing.quiz.passScore.toNumber()
+        : null;
 
     const score = computeScore(questionSnapshot, answers, {
       passScorePercentage,
       submittedAt: existing.submittedAt ?? new Date(),
     });
 
-    return { score, freshlyScored: false, studentId: existing.studentId, quizId: existing.quizId };
+    return {
+      score,
+      freshlyScored: false,
+      studentId: existing.studentId,
+      quizId: existing.quizId,
+    };
   }
 }

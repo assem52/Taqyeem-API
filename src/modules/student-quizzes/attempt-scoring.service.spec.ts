@@ -1,4 +1,8 @@
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AttemptScoringService } from './attempt-scoring.service';
 
@@ -26,9 +30,15 @@ describe('AttemptScoringService.startAttempt', () => {
     const prisma = buildPrismaMock();
     prisma.student.findUnique.mockResolvedValue(VERIFIED_STUDENT);
     prisma.quiz.findUnique.mockResolvedValue(OPEN_QUIZ);
-    prisma.enrollment.findUnique.mockResolvedValue({ quizId: 'q1', studentId: 's1' });
+    prisma.enrollment.findUnique.mockResolvedValue({
+      quizId: 'q1',
+      studentId: 's1',
+    });
     prisma.attempt.findUnique.mockResolvedValue(null);
-    prisma.attempt.create.mockResolvedValue({ id: 'new-attempt', status: 'IN_PROGRESS' });
+    prisma.attempt.create.mockResolvedValue({
+      id: 'new-attempt',
+      status: 'IN_PROGRESS',
+    });
 
     const service = new AttemptScoringService(prisma as any, eventsMock);
     const result = await service.startAttempt('s1', 'q1');
@@ -37,17 +47,80 @@ describe('AttemptScoringService.startAttempt', () => {
     expect(prisma.attempt.create).toHaveBeenCalledTimes(1);
   });
 
+  it('stores the ordered question snapshot when the attempt starts', async () => {
+    const prisma = buildPrismaMock();
+    prisma.student.findUnique.mockResolvedValue(VERIFIED_STUDENT);
+    prisma.quiz.findUnique.mockResolvedValue({
+      ...OPEN_QUIZ,
+      questions: [
+        {
+          id: 'question-1',
+          text: 'Original text',
+          type: 'MCQ',
+          points: { toNumber: () => 2 },
+          position: 0,
+          options: [
+            {
+              id: 'option-1',
+              option: 'Original answer',
+              isCorrect: true,
+              position: 0,
+            },
+          ],
+        },
+      ],
+    });
+    prisma.enrollment.findUnique.mockResolvedValue({
+      quizId: 'q1',
+      studentId: 's1',
+    });
+    prisma.attempt.findUnique.mockResolvedValue(null);
+    prisma.attempt.create.mockResolvedValue({
+      id: 'new-attempt',
+      status: 'IN_PROGRESS',
+    });
+
+    const service = new AttemptScoringService(prisma as any, eventsMock);
+    await service.startAttempt('s1', 'q1');
+
+    expect(prisma.attempt.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        questionSnapshot: [
+          expect.objectContaining({
+            questionId: 'question-1',
+            text: 'Original text',
+            options: [
+              expect.objectContaining({
+                id: 'option-1',
+                isCorrect: true,
+              }),
+            ],
+          }),
+        ],
+      }),
+    });
+  });
+
   it('ACCEPTANCE: starting twice returns the same attempt, not a second one', async () => {
     const prisma = buildPrismaMock();
     prisma.student.findUnique.mockResolvedValue(VERIFIED_STUDENT);
     prisma.quiz.findUnique.mockResolvedValue(OPEN_QUIZ);
-    prisma.enrollment.findUnique.mockResolvedValue({ quizId: 'q1', studentId: 's1' });
-    prisma.attempt.findUnique.mockResolvedValue({ id: 'existing-attempt', status: 'IN_PROGRESS' });
+    prisma.enrollment.findUnique.mockResolvedValue({
+      quizId: 'q1',
+      studentId: 's1',
+    });
+    prisma.attempt.findUnique.mockResolvedValue({
+      id: 'existing-attempt',
+      status: 'IN_PROGRESS',
+    });
 
     const service = new AttemptScoringService(prisma as any, eventsMock);
     const result = await service.startAttempt('s1', 'q1');
 
-    expect(result).toEqual({ attemptId: 'existing-attempt', status: 'IN_PROGRESS' });
+    expect(result).toEqual({
+      attemptId: 'existing-attempt',
+      status: 'IN_PROGRESS',
+    });
     expect(prisma.attempt.create).not.toHaveBeenCalled();
   });
 
@@ -55,11 +128,19 @@ describe('AttemptScoringService.startAttempt', () => {
     const prisma = buildPrismaMock();
     prisma.student.findUnique.mockResolvedValue(VERIFIED_STUDENT);
     prisma.quiz.findUnique.mockResolvedValue(OPEN_QUIZ);
-    prisma.enrollment.findUnique.mockResolvedValue({ quizId: 'q1', studentId: 's1' });
-    prisma.attempt.findUnique.mockResolvedValue({ id: 'done-attempt', status: 'SUBMITTED' });
+    prisma.enrollment.findUnique.mockResolvedValue({
+      quizId: 'q1',
+      studentId: 's1',
+    });
+    prisma.attempt.findUnique.mockResolvedValue({
+      id: 'done-attempt',
+      status: 'SUBMITTED',
+    });
 
     const service = new AttemptScoringService(prisma as any, eventsMock);
-    await expect(service.startAttempt('s1', 'q1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.startAttempt('s1', 'q1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
     expect(prisma.attempt.create).not.toHaveBeenCalled();
   });
 
@@ -70,18 +151,28 @@ describe('AttemptScoringService.startAttempt', () => {
     prisma.enrollment.findUnique.mockResolvedValue(null);
 
     const service = new AttemptScoringService(prisma as any, eventsMock);
-    await expect(service.startAttempt('s1', 'q1')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.startAttempt('s1', 'q1')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('rejects an unverified student, reusing the same eligibility rule as the dashboard', async () => {
     const prisma = buildPrismaMock();
-    prisma.student.findUnique.mockResolvedValue({ id: 's1', status: 'UNVERIFIED' });
+    prisma.student.findUnique.mockResolvedValue({
+      id: 's1',
+      status: 'UNVERIFIED',
+    });
     prisma.quiz.findUnique.mockResolvedValue(OPEN_QUIZ);
-    prisma.enrollment.findUnique.mockResolvedValue({ quizId: 'q1', studentId: 's1' });
+    prisma.enrollment.findUnique.mockResolvedValue({
+      quizId: 'q1',
+      studentId: 's1',
+    });
     prisma.attempt.findUnique.mockResolvedValue(null);
 
     const service = new AttemptScoringService(prisma as any, eventsMock);
-    await expect(service.startAttempt('s1', 'q1')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.startAttempt('s1', 'q1')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(prisma.attempt.create).not.toHaveBeenCalled();
   });
 
@@ -92,11 +183,16 @@ describe('AttemptScoringService.startAttempt', () => {
       ...OPEN_QUIZ,
       openDate: new Date('2099-01-01T00:00:00Z'),
     });
-    prisma.enrollment.findUnique.mockResolvedValue({ quizId: 'q1', studentId: 's1' });
+    prisma.enrollment.findUnique.mockResolvedValue({
+      quizId: 'q1',
+      studentId: 's1',
+    });
     prisma.attempt.findUnique.mockResolvedValue(null);
 
     const service = new AttemptScoringService(prisma as any, eventsMock);
-    await expect(service.startAttempt('s1', 'q1')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.startAttempt('s1', 'q1')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('returns 404 for a quiz that does not exist or is not published', async () => {
@@ -105,14 +201,19 @@ describe('AttemptScoringService.startAttempt', () => {
     prisma.quiz.findUnique.mockResolvedValue(null);
 
     const service = new AttemptScoringService(prisma as any, eventsMock);
-    await expect(service.startAttempt('s1', 'q1')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.startAttempt('s1', 'q1')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('SECURITY/CONCURRENCY: recovers gracefully from a race — two simultaneous starts should not surface a raw 500', async () => {
     const prisma = buildPrismaMock();
     prisma.student.findUnique.mockResolvedValue(VERIFIED_STUDENT);
     prisma.quiz.findUnique.mockResolvedValue(OPEN_QUIZ);
-    prisma.enrollment.findUnique.mockResolvedValue({ quizId: 'q1', studentId: 's1' });
+    prisma.enrollment.findUnique.mockResolvedValue({
+      quizId: 'q1',
+      studentId: 's1',
+    });
     // Both callers see "no existing attempt" ...
     prisma.attempt.findUnique
       .mockResolvedValueOnce(null) // the eligibility-check read
@@ -127,6 +228,9 @@ describe('AttemptScoringService.startAttempt', () => {
     const service = new AttemptScoringService(prisma as any, eventsMock);
     const result = await service.startAttempt('s1', 'q1');
 
-    expect(result).toEqual({ attemptId: 'winner-attempt', status: 'IN_PROGRESS' });
+    expect(result).toEqual({
+      attemptId: 'winner-attempt',
+      status: 'IN_PROGRESS',
+    });
   });
 });

@@ -8,9 +8,11 @@ import {
   StudentQuizDashboardDto,
   StudentQuizDashboardDtoItem,
 } from './dto/student-quiz-dashboard.dto';
+import { QuestionSnapshotItem } from './scoring';
 import { deriveStudentState, resolveAccess } from './student-quiz-state';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 @Injectable()
 export class StudentQuizzesService {
@@ -155,17 +157,23 @@ export class StudentQuizzesService {
       throw new NotFoundException('Attempt not found');
     }
 
-    const questions = await this.prisma.question.findMany({
-      where: { quizId, isHidden: false },
-      include: {
-        options: {
-          select: {
-            id: true,
-            option: true,
+    const snapshot = attempt.questionSnapshot as unknown as
+      QuestionSnapshotItem[] | null;
+    const questions =
+      snapshot ??
+      (await this.prisma.question.findMany({
+        where: { quizId, isHidden: false, deletedAt: null },
+        include: {
+          options: {
+            select: {
+              id: true,
+              option: true,
+            },
+            orderBy: [{ position: 'asc' }, { id: 'asc' }],
           },
         },
-      },
-    });
+        orderBy: [{ position: 'asc' }, { id: 'asc' }],
+      }));
 
     return {
       id: attempt.id,
@@ -176,13 +184,15 @@ export class StudentQuizzesService {
       submittedAt: attempt.submittedAt,
       score: attempt.score != null ? Number(attempt.score) : null,
       attemptAnswers: attempt.attemptAnswers ?? {},
-      questions: questions.map((q) => ({
-        id: q.id,
-        text: q.text,
-        type: q.type,
-        options: q.options,
+      questions: questions.map((question) => ({
+        id: 'questionId' in question ? question.questionId : question.id,
+        text: question.text,
+        type: question.type,
+        options: question.options.map((option) => ({
+          id: option.id,
+          option: option.option,
+        })),
       })),
     };
   }
 }
-

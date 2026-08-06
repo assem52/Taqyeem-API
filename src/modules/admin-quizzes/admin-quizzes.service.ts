@@ -8,8 +8,10 @@ import { Prisma, QuizStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   QuestionTypeForValidation,
+  validateQuestion,
   validateQuiz,
 } from '../questions/validate-quiz';
+import { CreateQuestionDto } from '../questions/dto/create-question.dto';
 import { AdminQuizDto, PublishQuizResponseDto } from './dto/admin-quiz.dto';
 import { CreateAdminQuizDto } from './dto/create-admin-quiz.dto';
 import { QueryAdminQuizDto } from './dto/query-admin-quiz.dto';
@@ -17,6 +19,12 @@ import {
   ATTEMPT_LOCK_MESSAGE,
   UpdateAdminQuizDto,
 } from './dto/update-admin-quiz.dto';
+import {
+  DuplicateQuizDto,
+  ReorderQuestionsDto,
+  SetQuestionVisibilityDto,
+  UpdateQuestionDto,
+} from './dto/question-bank.dto';
 
 type QuizWithQuestions = Prisma.QuizGetPayload<{
   include: {
@@ -24,6 +32,10 @@ type QuizWithQuestions = Prisma.QuizGetPayload<{
       include: { options: true };
     };
   };
+}>;
+
+type QuestionWithOptions = Prisma.QuestionGetPayload<{
+  include: { options: true };
 }>;
 
 @Injectable()
@@ -55,8 +67,11 @@ export class AdminQuizzesService {
       where,
       include: {
         questions: {
-          include: { options: true },
-          orderBy: { id: 'asc' },
+          where: { deletedAt: null },
+          include: {
+            options: { orderBy: [{ position: 'asc' }, { id: 'asc' }] },
+          },
+          orderBy: [{ position: 'asc' }, { id: 'asc' }],
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -103,8 +118,11 @@ export class AdminQuizzesService {
       },
       include: {
         questions: {
-          include: { options: true },
-          orderBy: { id: 'asc' },
+          where: { deletedAt: null },
+          include: {
+            options: { orderBy: [{ position: 'asc' }, { id: 'asc' }] },
+          },
+          orderBy: [{ position: 'asc' }, { id: 'asc' }],
         },
       },
     });
@@ -118,8 +136,11 @@ export class AdminQuizzesService {
         where: { id: quizId },
         include: {
           questions: {
-            include: { options: true },
-            orderBy: { id: 'asc' },
+            where: { deletedAt: null },
+            include: {
+              options: { orderBy: [{ position: 'asc' }, { id: 'asc' }] },
+            },
+            orderBy: [{ position: 'asc' }, { id: 'asc' }],
           },
         },
       });
@@ -257,7 +278,225 @@ export class AdminQuizzesService {
     return this.getQuizForAdmin(quizId);
   }
 
-  async deleteQuiz(quizId: string): Promise<{ quizId: string; message: string }> {
+  async listQuestions(quizId: string) {
+    await this.requireQuiz(quizId);
+    const questions = await this.prisma.question.findMany({
+      where: { quizId, deletedAt: null },
+      include: {
+        options: { orderBy: [{ position: 'asc' }, { id: 'asc' }] },
+      },
+      orderBy: [{ position: 'asc' }, { id: 'asc' }],
+    });
+    return questions.map((question) => this.toAdminQuestionDto(question));
+  }
+
+  async createQuestion(quizId: string, dto: CreateQuestionDto) {
+    await this.requireUnlockedQuiz(quizId);
+    this.assertValidQuestion({
+      text: dto.text,
+      type: dto.type,
+      isHidden: false,
+      options: dto.options,
+    });
+
+    const lastQuestion = await this.prisma.question.findFirst({
+      where: { quizId, deletedAt: null },
+      orderBy: [{ position: 'desc' }, { id: 'desc' }],
+      select: { position: true },
+    });
+    const question = await this.prisma.question.create({
+      data: {
+        quizId,
+        text: dto.text.trim(),
+        type: dto.type,
+        points: dto.points ?? 1,
+        position: (lastQuestion?.position ?? -1) + 1,
+        options: {
+          create: dto.options.map((option, position) => ({
+            option: option.option.trim(),
+            isCorrect: option.isCorrect,
+            position,
+          })),
+        },
+      },
+      include: {
+        options: { orderBy: [{ position: 'asc' }, { id: 'asc' }] },
+      },
+    });
+    return this.toAdminQuestionDto(question);
+  }
+
+  async updateQuestion(
+    quizId: string,
+    questionId: string,
+    dto: UpdateQuestionDto,
+  ) {
+    await this.requireUnlockedQuiz(quizId);
+    const existing = await this.requireActiveQuestion(quizId, questionId);
+    const options =
+      dto.options ??
+      existing.options.map((option) => ({
+        option: option.option,
+        isCorrect: option.isCorrect,
+      }));
+
+    this.assertValidQuestion({
+      text: dto.text ?? existing.text,
+      type: dto.type ?? existing.type,
+      isHidden: existing.isHidden,
+      options,
+    });
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (dto.options !== undefined) {
+        await tx.quizOption.deleteMany({ where: { questionId } });
+      }
+      return tx.question.update({
+        where: { id: questionId },
+        data: {
+          text: dto.text?.trim(),
+          type: dto.type,
+          points: dto.points,
+          options:
+            dto.options === undefined
+              ? undefined
+              : {
+                  create: dto.options.map((option, position) => ({
+                    option: option.option.trim(),
+                    isCorrect: option.isCorrect,
+                    position,
+                  })),
+                },
+        },
+        include: {
+          options: { orderBy: [{ position: 'asc' }, { id: 'asc' }] },
+        },
+      });
+    });
+    return this.toAdminQuestionDto(updated);
+  }
+
+  async reorderQuestions(quizId: string, dto: ReorderQuestionsDto) {
+    await this.requireUnlockedQuiz(quizId);
+    const activeQuestions = await this.prisma.question.findMany({
+      where: { quizId, deletedAt: null },
+      select: { id: true },
+    });
+    const activeIds = new Set(activeQuestions.map((question) => question.id));
+    if (
+      dto.questionIds.length !== activeIds.size ||
+      dto.questionIds.some((id) => !activeIds.has(id))
+    ) {
+      throw new BadRequestException(
+        'questionIds must contain every active question in this quiz exactly once',
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await Promise.all(
+        dto.questionIds.map((id, position) =>
+          tx.question.update({ where: { id }, data: { position } }),
+        ),
+      );
+    });
+    return this.listQuestions(quizId);
+  }
+
+  async setQuestionVisibility(
+    quizId: string,
+    questionId: string,
+    dto: SetQuestionVisibilityDto,
+  ) {
+    await this.requireUnlockedQuiz(quizId);
+    await this.requireActiveQuestion(quizId, questionId);
+    const question = await this.prisma.question.update({
+      where: { id: questionId },
+      data: { isHidden: dto.isHidden },
+      include: {
+        options: { orderBy: [{ position: 'asc' }, { id: 'asc' }] },
+      },
+    });
+    return this.toAdminQuestionDto(question);
+  }
+
+  async removeQuestion(quizId: string, questionId: string) {
+    await this.requireUnlockedQuiz(quizId);
+    await this.requireActiveQuestion(quizId, questionId);
+    const deletedAt = new Date();
+    await this.prisma.question.update({
+      where: { id: questionId },
+      data: { deletedAt, isHidden: true },
+    });
+    return {
+      questionId,
+      deletedAt: deletedAt.toISOString(),
+      message: 'Question removed successfully.',
+    };
+  }
+
+  async duplicateQuiz(quizId: string, dto: DuplicateQuizDto) {
+    const source = await this.prisma.quiz.findUnique({
+      where: { id: quizId },
+      include: {
+        questions: {
+          where: { deletedAt: null },
+          include: {
+            options: { orderBy: [{ position: 'asc' }, { id: 'asc' }] },
+          },
+          orderBy: [{ position: 'asc' }, { id: 'asc' }],
+        },
+      },
+    });
+    if (!source) {
+      throw new NotFoundException('Quiz not found');
+    }
+
+    const duplicate = await this.prisma.$transaction((tx) =>
+      tx.quiz.create({
+        data: {
+          title: dto.title?.trim() || `${source.title} (Copy)`,
+          description: source.description,
+          instructions: source.instructions,
+          openDate: source.openDate,
+          closesAt: source.closesAt,
+          duration: source.duration,
+          passScore: source.passScore,
+          integrityThreshold: source.integrityThreshold,
+          status: QuizStatus.DRAFT,
+          questions: {
+            create: source.questions.map((question) => ({
+              text: question.text,
+              type: question.type,
+              points: question.points,
+              isHidden: question.isHidden,
+              position: question.position,
+              options: {
+                create: question.options.map((option) => ({
+                  option: option.option,
+                  isCorrect: option.isCorrect,
+                  position: option.position,
+                })),
+              },
+            })),
+          },
+        },
+        include: {
+          questions: {
+            where: { deletedAt: null },
+            include: {
+              options: { orderBy: [{ position: 'asc' }, { id: 'asc' }] },
+            },
+            orderBy: [{ position: 'asc' }, { id: 'asc' }],
+          },
+        },
+      }),
+    );
+    return this.toAdminQuizDto(duplicate, 0);
+  }
+
+  async deleteQuiz(
+    quizId: string,
+  ): Promise<{ quizId: string; message: string }> {
     const existing = await this.prisma.quiz.findUnique({
       where: { id: quizId },
     });
@@ -284,8 +523,11 @@ export class AdminQuizzesService {
       where: { id: quizId },
       include: {
         questions: {
-          include: { options: true },
-          orderBy: { id: 'asc' },
+          where: { deletedAt: null },
+          include: {
+            options: { orderBy: [{ position: 'asc' }, { id: 'asc' }] },
+          },
+          orderBy: [{ position: 'asc' }, { id: 'asc' }],
         },
       },
     });
@@ -297,8 +539,66 @@ export class AdminQuizzesService {
     return quiz;
   }
 
+  private async requireQuiz(quizId: string) {
+    const quiz = await this.prisma.quiz.findUnique({ where: { id: quizId } });
+    if (!quiz) {
+      throw new NotFoundException('Quiz not found');
+    }
+    return quiz;
+  }
+
+  private async requireUnlockedQuiz(quizId: string) {
+    const quiz = await this.requireQuiz(quizId);
+    if ((await this.getAttemptCount(quizId)) > 0) {
+      throw new ForbiddenException(ATTEMPT_LOCK_MESSAGE);
+    }
+    return quiz;
+  }
+
+  private async requireActiveQuestion(quizId: string, questionId: string) {
+    const question = await this.prisma.question.findFirst({
+      where: { id: questionId, quizId, deletedAt: null },
+      include: {
+        options: { orderBy: [{ position: 'asc' }, { id: 'asc' }] },
+      },
+    });
+    if (!question) {
+      throw new NotFoundException('Question not found in this quiz');
+    }
+    return question;
+  }
+
+  private assertValidQuestion(
+    question: Parameters<typeof validateQuestion>[0],
+  ): void {
+    const validation = validateQuestion(question);
+    if (!validation.valid) {
+      throw new BadRequestException({
+        message: 'Question is invalid.',
+        errors: validation.errors,
+      });
+    }
+  }
+
   private async getAttemptCount(quizId: string): Promise<number> {
     return this.prisma.attempt.count({ where: { quizId } });
+  }
+
+  private toAdminQuestionDto(question: QuestionWithOptions) {
+    return {
+      questionId: question.id,
+      text: question.text,
+      type: question.type,
+      points: Number(question.points),
+      isHidden: question.isHidden,
+      position: question.position,
+      options: question.options.map((option) => ({
+        optionId: option.id,
+        option: option.option,
+        isCorrect: option.isCorrect,
+        position: option.position,
+      })),
+    };
   }
 
   private toAdminQuizDto(
@@ -333,18 +633,9 @@ export class AdminQuizzesService {
       canEditStructure: attemptCount === 0,
       isValid: validation.valid,
       validationErrors: validation.errors,
-      questions: quiz.questions.map((question) => ({
-        questionId: question.id,
-        text: question.text,
-        type: question.type,
-        points: Number(question.points),
-        isHidden: question.isHidden,
-        options: question.options.map((option) => ({
-          optionId: option.id,
-          option: option.option,
-          isCorrect: option.isCorrect,
-        })),
-      })),
+      questions: quiz.questions.map((question) =>
+        this.toAdminQuestionDto(question),
+      ),
     };
   }
 }

@@ -4,6 +4,7 @@ export interface OptionSnapshotItem {
   id: string;
   option: string;
   isCorrect: boolean;
+  position?: number;
 }
 
 export interface QuestionSnapshotItem {
@@ -11,6 +12,7 @@ export interface QuestionSnapshotItem {
   text: string;
   type: QuestionType;
   points: number;
+  position?: number;
   options: OptionSnapshotItem[];
 }
 
@@ -30,11 +32,9 @@ export interface ScoreResult {
 }
 
 export interface ComputeScoreOptions {
-
   passScorePercentage?: number | null;
   submittedAt?: Date;
 }
-
 
 export function computeScore(
   questionSnapshot: QuestionSnapshotItem[],
@@ -56,15 +56,17 @@ export function computeScore(
     maxScore += q.points;
     const selectedOptionId = answers[q.questionId]?.selectedOptionId ?? null;
     if (selectedOptionId != null) {
-      const chosen = q.options.find(o => o.id === selectedOptionId);
+      const chosen = q.options.find((o) => o.id === selectedOptionId);
       if (chosen?.isCorrect) {
         rawScore += q.points;
       }
     }
   }
 
-  const percentage = maxScore > 0 ? Math.round((rawScore / maxScore) * 10000) / 100 : 0;
-  const passed = passScorePercentage != null ? percentage >= passScorePercentage : null;
+  const percentage =
+    maxScore > 0 ? Math.round((rawScore / maxScore) * 10000) / 100 : 0;
+  const passed =
+    passScorePercentage != null ? percentage >= passScorePercentage : null;
 
   return { rawScore, maxScore, percentage, passed, ungradedCount, submittedAt };
 }

@@ -7,10 +7,13 @@ export class QuestionAnalyticsService {
 
   async getQuestionAnalytics(quizId: string) {
     const questions = await this.prisma.question.findMany({
-      where: { quizId },
+      where: { quizId, deletedAt: null },
       include: {
-        options: true, 
+        options: {
+          orderBy: [{ position: 'asc' }, { id: 'asc' }],
+        },
       },
+      orderBy: [{ position: 'asc' }, { id: 'asc' }],
     });
 
     const attempts = await this.prisma.attempt.findMany({
@@ -19,7 +22,7 @@ export class QuestionAnalyticsService {
 
     return questions.map((question) => {
       const questionId = question.id;
-      const options = question.options || [];  
+      const options = question.options || [];
 
       let totalAnswers = 0;
       let correctAnswersCount = 0;
@@ -29,7 +32,7 @@ export class QuestionAnalyticsService {
         if (answersSnapshot && answersSnapshot[questionId]) {
           totalAnswers++;
           const studentAnswer = answersSnapshot[questionId];
-          
+
           const correctOption = options.find((opt) => opt.isCorrect);
           if (correctOption && studentAnswer === correctOption.id) {
             correctAnswersCount++;
@@ -37,7 +40,8 @@ export class QuestionAnalyticsService {
         }
       });
 
-      const correctRate = totalAnswers > 0 ? (correctAnswersCount / totalAnswers) * 100 : 0;
+      const correctRate =
+        totalAnswers > 0 ? (correctAnswersCount / totalAnswers) * 100 : 0;
 
       return {
         questionId,
