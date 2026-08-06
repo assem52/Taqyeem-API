@@ -1,4 +1,13 @@
-import { IsString, IsEnum, IsArray, ValidateNested, IsBoolean, ArrayMinSize, IsNotEmpty } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export enum QuestionType {
@@ -9,7 +18,6 @@ export enum QuestionType {
 
 export class QuizOptionDto {
   @IsString()
-  @IsNotEmpty()
   option!: string;
 
   @IsBoolean()
@@ -18,7 +26,6 @@ export class QuizOptionDto {
 
 export class CreateQuestionDto {
   @IsString()
-  @IsNotEmpty()
   text!: string;
 
   @IsEnum(QuestionType)
@@ -27,6 +34,10 @@ export class CreateQuestionDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => QuizOptionDto)
-  @ArrayMinSize(2, { message: 'MCQ questions must have at least two options.' })
   options!: QuizOptionDto[];
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.01)
+  points?: number;
 }

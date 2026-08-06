@@ -23,7 +23,74 @@ export type {
 export function getVisibleQuestions(
   questions: QuestionForValidation[],
 ): QuestionForValidation[] {
-  return questions.filter((question) => !question.isHidden);
+  return questions.filter(
+    (question) => !question.isHidden && question.deletedAt == null,
+  );
+}
+
+/** Validate one authored question. The label is used by quiz-level errors. */
+export function validateQuestion(
+  question: QuestionForValidation,
+  label = 'Question',
+): ValidationResult {
+  const errors: string[] = [];
+  const options = question.options ?? [];
+
+  if (!(question.text?.trim() ?? '')) {
+    errors.push(`${label} has no text`);
+  }
+
+  const seenOptions = new Set<string>();
+  options.forEach((option, index) => {
+    const text = option.option?.trim() ?? '';
+    if (!text) {
+      errors.push(`${label} option ${index + 1} has no text`);
+      return;
+    }
+
+    const normalized = text.toLocaleLowerCase();
+    if (seenOptions.has(normalized)) {
+      errors.push(`${label} has duplicate option text: "${text}"`);
+    }
+    seenOptions.add(normalized);
+  });
+
+  if (question.type === 'OPEN_ENDED') {
+    errors.push(
+      `${label} uses OPEN_ENDED, which is not supported by objective-only scoring`,
+    );
+    return { valid: false, errors };
+  }
+
+  if (question.type === 'MCQ') {
+    if (options.length === 1) {
+      errors.push(`${label} has only one option`);
+    } else if (options.length < 2) {
+      errors.push(`${label} must have at least two options for MCQ`);
+    }
+  }
+
+  if (question.type === 'TRUE_FALSE') {
+    if (options.length !== 2) {
+      errors.push(`${label} must have exactly two options for True/False`);
+    } else {
+      const values = options.map((option) => option.option.trim()).sort();
+      if (values[0] !== 'False' || values[1] !== 'True') {
+        errors.push(
+          `${label} must use exactly the canonical True and False options`,
+        );
+      }
+    }
+  }
+
+  const correctCount = options.filter((option) => option.isCorrect).length;
+  if (correctCount === 0) {
+    errors.push(`${label} has no correct answer marked`);
+  } else if (correctCount > 1) {
+    errors.push(`${label} has multiple correct answers marked`);
+  }
+
+  return { valid: errors.length === 0, errors };
 }
 
 /**
@@ -40,35 +107,7 @@ export function validateQuiz(quiz: QuizForValidation): ValidationResult {
   }
 
   visibleQuestions.forEach((question, index) => {
-    const questionNumber = index + 1;
-    const trimmedText = question.text?.trim() ?? '';
-
-    if (!trimmedText) {
-      errors.push(`Question ${questionNumber} has no text`);
-    }
-
-    const options = question.options ?? [];
-    const correctCount = options.filter((option) => option.isCorrect).length;
-
-    if (correctCount !== 1) {
-      errors.push(`Question ${questionNumber} has no correct answer marked`);
-    }
-
-    if (question.type === 'MCQ') {
-      if (options.length === 1) {
-        errors.push(`Question ${questionNumber} has only one option`);
-      } else if (options.length < 2) {
-        errors.push(
-          `Question ${questionNumber} must have at least two options for MCQ`,
-        );
-      }
-    }
-
-    if (question.type === 'TRUE_FALSE' && options.length !== 2) {
-      errors.push(
-        `Question ${questionNumber} must have exactly two options for True/False`,
-      );
-    }
+    errors.push(...validateQuestion(question, `Question ${index + 1}`).errors);
   });
 
   return { valid: errors.length === 0, errors };

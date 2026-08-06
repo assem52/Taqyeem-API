@@ -1,4 +1,4 @@
-import { validateQuiz } from './validate-quiz';
+import { validateQuestion, validateQuiz } from './validate-quiz';
 
 describe('validateQuiz', () => {
   it('returns error when quiz has no visible questions', () => {
@@ -59,9 +59,7 @@ describe('validateQuiz', () => {
     });
 
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain(
-      'Question 1 has no correct answer marked',
-    );
+    expect(result.errors).toContain('Question 1 has no correct answer marked');
   });
 
   it('returns error when question has no text', () => {
@@ -118,5 +116,68 @@ describe('validateQuiz', () => {
 
     expect(result.valid).toBe(true);
     expect(result.errors).toEqual([]);
+  });
+
+  it('reports empty and duplicate option text precisely', () => {
+    const result = validateQuestion({
+      text: 'Pick one',
+      type: 'MCQ',
+      isHidden: false,
+      options: [
+        { option: ' Alpha ', isCorrect: true },
+        { option: 'alpha', isCorrect: false },
+        { option: ' ', isCorrect: false },
+      ],
+    });
+
+    expect(result.errors).toContain(
+      'Question has duplicate option text: "alpha"',
+    );
+    expect(result.errors).toContain('Question option 3 has no text');
+  });
+
+  it('rejects multiple correct answers', () => {
+    const result = validateQuestion({
+      text: 'Pick one',
+      type: 'MCQ',
+      isHidden: false,
+      options: [
+        { option: 'A', isCorrect: true },
+        { option: 'B', isCorrect: true },
+      ],
+    });
+
+    expect(result.errors).toContain(
+      'Question has multiple correct answers marked',
+    );
+  });
+
+  it('requires canonical True and False values', () => {
+    const result = validateQuestion({
+      text: 'Correct?',
+      type: 'TRUE_FALSE',
+      isHidden: false,
+      options: [
+        { option: 'Yes', isCorrect: true },
+        { option: 'No', isCorrect: false },
+      ],
+    });
+
+    expect(result.errors).toContain(
+      'Question must use exactly the canonical True and False options',
+    );
+  });
+
+  it('rejects OPEN_ENDED for objective-only authoring', () => {
+    const result = validateQuestion({
+      text: 'Explain',
+      type: 'OPEN_ENDED',
+      isHidden: false,
+      options: [],
+    });
+
+    expect(result.errors).toContain(
+      'Question uses OPEN_ENDED, which is not supported by objective-only scoring',
+    );
   });
 });

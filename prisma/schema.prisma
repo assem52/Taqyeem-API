@@ -63,16 +63,16 @@ model Quiz {
 }
 
 model User {
-  id                    String        @id @default(cuid())
-  name                  String
-  email                 String        @unique
-  password              String
-  role                  Role          @default(STUDENT)
-  status                StudentStatus @default(UNVERIFIED)
-  verificationToken     String?       @map("verification_token")
-  tokenExpiresAt        DateTime?     @map("token_expires_at")
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
+  id                String        @id @default(cuid())
+  name              String
+  email             String        @unique
+  password          String
+  role              Role          @default(STUDENT)
+  status            StudentStatus @default(UNVERIFIED)
+  verificationToken String?       @map("verification_token")
+  tokenExpiresAt    DateTime?     @map("token_expires_at")
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   @@map("users")
 }
@@ -81,16 +81,22 @@ enum Role {
   ADMIN
   STUDENT
 }
+
 model Question {
-  id       String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  quizId   String       @db.Uuid
-  quiz     Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  text     String
-  isHidden Boolean      @default(false) @map("is_hidden")
-  points   Decimal      @default(1) @db.Decimal(7, 2)
-  type     QuestionType @default(MCQ)
-  options  QuizOption[]
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quizId    String       @db.Uuid
+  quiz      Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  text      String
+  isHidden  Boolean      @default(false) @map("is_hidden")
+  position  Int          @default(0)
+  points    Decimal      @default(1) @db.Decimal(7, 2)
+  type      QuestionType @default(MCQ)
+  deletedAt DateTime?    @map("deleted_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+  options   QuizOption[]
   answers   Answer[]
+
+  @@index([quizId, deletedAt, position])
 }
 
 enum QuestionType {
@@ -105,6 +111,9 @@ model QuizOption {
   question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
   option     String
   isCorrect  Boolean  @default(false)
+  position   Int      @default(0)
+
+  @@index([questionId, position])
 }
 
 model Document {
@@ -152,12 +161,12 @@ model Chunk {
 }
 
 model Answer {
-  attemptId        String    @db.Uuid
-  attempt          Attempt   @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  questionId       String    @db.Uuid
-  question         Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  selectedOptionId String?   @db.Uuid
-  answeredAt       DateTime  @default(now()) @map("answered_at")
+  attemptId        String   @db.Uuid
+  attempt          Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId       String   @db.Uuid
+  question         Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedOptionId String?  @db.Uuid
+  answeredAt       DateTime @default(now()) @map("answered_at")
 
   @@id([attemptId, questionId])
   @@index([attemptId])
@@ -201,7 +210,6 @@ enum EmailLogStatus {
   SENT
   FAILED
 }
-
 
 enum IntegrityEventType {
   VISIBILITY_LOST
