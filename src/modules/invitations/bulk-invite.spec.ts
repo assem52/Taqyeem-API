@@ -16,6 +16,7 @@ describe('AdminInvitationStatusService — bulkInviteStudents', () => {
 
     const emailService = {
       sendInvitationEmail: jest.fn(),
+      deliveryMode: 'simulated' as const,
     };
 
     return {
@@ -73,6 +74,7 @@ describe('AdminInvitationStatusService — bulkInviteStudents', () => {
     expect(result.duplicates).toBe(2);
     expect(result.invalid).toBe(1);
     expect(result.failed).toBe(0);
+    expect(result.deliveryMode).toBe('simulated');
 
     expect(result.results).toEqual([
       { email: 'newuser@example.com', status: 'SENT' },
@@ -119,6 +121,7 @@ describe('AdminInvitationStatusService — bulkInviteStudents', () => {
 
     expect(result.sent).toBe(0);
     expect(result.failed).toBe(1);
+    expect(result.deliveryMode).toBe('simulated');
     expect(result.results[0]).toEqual({
       email: 'fail@example.com',
       status: 'FAILED',

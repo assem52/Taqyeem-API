@@ -29,6 +29,10 @@ export class EmailService implements OnModuleInit {
     }
   }
 
+  get deliveryMode(): 'live' | 'simulated' {
+    return this.isDeliveryEnabled ? 'live' : 'simulated';
+  }
+
   /**
    * Dispatch an invitation email to a target address.
    * Deterministically records an EmailLog entry with status SENT or FAILED.
