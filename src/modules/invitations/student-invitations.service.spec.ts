@@ -36,13 +36,13 @@ describe('StudentInvitationsService', () => {
     );
   });
 
-  it('should throw NotFoundException if invitation token does not match any record or quiz', async () => {
+  it('should throw NotFoundException if invitation token does not match any record', async () => {
     prismaMock.invitation.findUnique.mockResolvedValue(null);
-    prismaMock.quiz.findUnique.mockResolvedValue(null);
 
     await expect(service.getInvitation(invitationId)).rejects.toThrow(
       NotFoundException,
     );
+    expect(prismaMock.quiz.findUnique).not.toHaveBeenCalled();
   });
 
   it('should throw NotFoundException if quiz is not in PUBLISHED state', async () => {

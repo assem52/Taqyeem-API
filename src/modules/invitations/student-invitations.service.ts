@@ -17,24 +17,16 @@ export class StudentInvitationsService {
       throw new BadRequestException('Invalid invitation token format.');
     }
 
-    // Try finding by Invitation ID first
-    let invitation = await this.prisma.invitation.findUnique({
+    const invitation = await this.prisma.invitation.findUnique({
       where: { id: token },
       include: { quiz: true },
     });
 
-    let quiz = invitation?.quiz ?? null;
-
-    // Fallback: If token directly matches a Quiz ID
-    if (!quiz) {
-      quiz = await this.prisma.quiz.findUnique({
-        where: { id: token },
-      });
-    }
-
-    if (!quiz) {
+    if (!invitation || !invitation.quiz) {
       throw new NotFoundException('Invitation token is invalid or expired.');
     }
+
+    const quiz = invitation.quiz;
 
     if (quiz.status !== 'PUBLISHED') {
       throw new NotFoundException('This quiz link is invalid or unavailable.');
