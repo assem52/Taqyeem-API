@@ -10,7 +10,7 @@ import {
   QuestionTypeForValidation,
   validateQuestion,
   validateQuiz,
-} from '../questions/validate-quiz';
+} from '../questions';
 import { CreateQuestionDto } from '../questions/dto/create-question.dto';
 import { AdminQuizDto, PublishQuizResponseDto } from './dto/admin-quiz.dto';
 import { CreateAdminQuizDto } from './dto/create-admin-quiz.dto';

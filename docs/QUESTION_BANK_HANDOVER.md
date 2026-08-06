@@ -3,6 +3,18 @@
 All authoring routes are nested under `/admin/quizzes` and protected by
 `AdminGuard`.
 
+## Shared validity contract (for publishing)
+
+The reusable question validity contract is exposed here:
+
+- Implementation: `src/modules/questions/validate-quiz.ts`
+- Public barrel: `src/modules/questions/index.ts`
+- Written contract: `docs/QUESTION_VALIDITY_CONTRACT.md`
+
+Publishing must import `validateQuiz` (never copy rules). Authoring APIs call
+`validateQuestion` for MCQ and True/False on the server before saving. Publish
+re-validates from the database at click time.
+
 ## API contracts
 
 - `GET /admin/quizzes/:quizId/questions` lists non-deleted questions by
