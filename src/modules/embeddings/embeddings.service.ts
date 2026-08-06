@@ -11,8 +11,9 @@ export class EmbeddingsService {
   private readonly dimensions: number;
 
   constructor(private configService: ConfigService) {
-    const apiKey = this.configService.get('OPENAI_API_KEY') || 'mock-openai-key';
-    this.openai = new OpenAI({ apiKey });
+    this.openai = new OpenAI({
+      apiKey: this.configService.get('OPENAI_API_KEY'),
+    });
     this.model = this.configService.get(
       'OPENAI_EMBEDDING_MODEL',
       'text-embedding-3-small',

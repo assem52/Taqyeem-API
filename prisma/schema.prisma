@@ -139,7 +139,7 @@ model Chunk {
   content         String                       @db.Text
   contentHash     String                       @unique @db.VarChar(64)
   embedding       Json?                        @db.JsonB
-//  embeddingVector Unsupported("vector(1536)")?
+  embeddingVector Unsupported("vector(1536)")?
   chunkIndex      Int                          @default(0)
   metadata        Json?                        @db.JsonB
 
