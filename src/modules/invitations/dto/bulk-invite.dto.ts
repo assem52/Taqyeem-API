@@ -23,5 +23,6 @@ export class BulkInviteResponseDto {
   failed: number;
   duplicates: number;
   invalid: number;
+  deliveryMode: 'live' | 'simulated';
   results: BulkInviteItemResult[];
 }

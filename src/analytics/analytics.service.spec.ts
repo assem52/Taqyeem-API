@@ -65,4 +65,4 @@ describe('AnalyticsService', () => {
     expect(result.invitedCount).toEqual(0);
     expect(result.submittedCount).toEqual(0);
   });
-});
+});

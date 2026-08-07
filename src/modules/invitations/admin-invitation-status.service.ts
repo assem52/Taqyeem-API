@@ -245,6 +245,7 @@ export class AdminInvitationStatusService {
       failed: failedCount,
       duplicates: duplicateCount,
       invalid: invalidCount,
+      deliveryMode: this.emailService.deliveryMode,
       results,
     };
   }
