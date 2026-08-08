@@ -10,10 +10,10 @@ import { AuthModule } from '../../auth/auth.module';
 @Module({
   imports: [AuthModule],
   controllers: [
-  StudentQuizzesController,
-  AttemptController,
-  AttemptAdminController,
-],
+    StudentQuizzesController,
+    AttemptController,
+    AttemptAdminController,
+  ],
   providers: [StudentQuizzesService, AttemptScoringService, ScoreEventsService],
 })
 export class StudentQuizzesModule {}
