@@ -151,12 +151,12 @@ export class AttemptScoringService {
         async (tx) => {
           const claimed = await tx.$executeRaw`
             UPDATE "Attempt" a
-            SET status = 'AUTO_SUBMITTED'::"AttemptStatus", "submitted_at" = NOW()
+            SET status = 'AUTO_SUBMITTED'::"AttemptStatus", "submitted_at" = (NOW() AT TIME ZONE 'UTC')
             FROM "Quiz" q
             WHERE a.id = ${attemptId}::uuid
               AND a."quizId" = q.id
               AND a.status = 'IN_PROGRESS'::"AttemptStatus"
-              AND q."close_at" <= NOW()
+              AND q."close_at" <= (NOW() AT TIME ZONE 'UTC')
           `;
 
           if (claimed === 0) {
@@ -239,7 +239,7 @@ export class AttemptScoringService {
         AND a."studentId" = ${studentId}::uuid
         AND a.status = 'IN_PROGRESS'::"AttemptStatus"
         AND a."quizId" = q.id
-        AND q."close_at" > NOW()
+        AND q."close_at" > (NOW() AT TIME ZONE 'UTC')
     `;
 
     if (affected === 0) {
@@ -290,11 +290,11 @@ export class AttemptScoringService {
           const claimed = await tx.$executeRaw`
             UPDATE "Attempt" a
             SET status = CASE
-              WHEN q."close_at" <= NOW()
+              WHEN q."close_at" <= (NOW() AT TIME ZONE 'UTC')
                 THEN 'AUTO_SUBMITTED'::"AttemptStatus"
               ELSE 'SUBMITTED'::"AttemptStatus"
             END,
-            "submitted_at" = NOW()
+            "submitted_at" = (NOW() AT TIME ZONE 'UTC')
             FROM "Quiz" q
             WHERE a.id = ${attemptId}::uuid
               AND a."studentId" = ${studentId}::uuid

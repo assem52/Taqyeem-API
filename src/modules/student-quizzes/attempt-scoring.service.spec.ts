@@ -271,6 +271,8 @@ describe('AttemptScoringService.submitAttempt', () => {
     expect(sql).toContain('CASE');
     expect(sql).toContain('close_at');
     expect(sql).toContain('submitted_at');
+    expect(sql).toContain('AT TIME ZONE');
+    expect(sql).toContain('UTC');
   });
 });
 
@@ -293,6 +295,7 @@ describe('AttemptScoringService.saveAnswer deadline', () => {
 
     expect(sql).toContain('IN_PROGRESS');
     expect(sql).toContain('close_at');
-    expect(sql).toContain('NOW()');
+    expect(sql).toContain('AT TIME ZONE');
+    expect(sql).toContain('UTC');
   });
 });

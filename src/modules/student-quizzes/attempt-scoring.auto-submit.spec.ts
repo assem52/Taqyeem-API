@@ -92,6 +92,8 @@ describe('AttemptScoringService.autoSubmitIfExpired', () => {
     expect(sql).toContain('AUTO_SUBMITTED');
     expect(sql).toContain('close_at');
     expect(sql).toContain('submitted_at');
+    expect(sql).toContain('AT TIME ZONE');
+    expect(sql).toContain('UTC');
   });
 
   it('returns null, publishes nothing, and writes nothing for an attempt whose quiz has not closed yet', async () => {
