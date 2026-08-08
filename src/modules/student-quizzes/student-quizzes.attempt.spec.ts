@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { StudentQuizzesController } from './student-quizzes.controller';
@@ -39,20 +39,8 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
     service = module.get<StudentQuizzesService>(StudentQuizzesService);
   });
 
-  describe('Controller identity checks', () => {
-    it('should throw BadRequestException (400) if no x-student-id header and no MOCK_STUDENT_ID', () => {
-      const original = process.env.MOCK_STUDENT_ID;
-      delete process.env.MOCK_STUDENT_ID;
-      try {
-        expect(() => controller.getAttempt(quizId, undefined)).toThrow(
-          BadRequestException,
-        );
-      } finally {
-        process.env.MOCK_STUDENT_ID = original;
-      }
-    });
-
-    it('should proceed if x-student-id header is provided', async () => {
+  describe('Controller wiring (identity resolved by StudentAuthGuard)', () => {
+    it('should pass the resolved studentId through to the service', async () => {
       prismaMock.student.findUnique.mockResolvedValue({ id: studentIdA });
       prismaMock.attempt.findUnique.mockResolvedValue({
         id: attemptId,

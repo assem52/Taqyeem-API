@@ -1,9 +1,10 @@
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { AnalyticsService } from './analytics.service';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 
-@UseGuards(RolesGuard)
+@UseGuards(AuthGuard('jwt'), RolesGuard)
 @Roles('ADMIN')
 @Controller('analytics')
 export class AnalyticsController {

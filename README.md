@@ -20,9 +20,9 @@ createdb qna   # if it does not exist yet
 
 ```bash
 npm install
-cp .env.example .env   # then edit values
-npm run migrate:dev    # apply Prisma migrations
-npx prisma db seed     # demo student + quizzes
+cp .env.example .env   # then edit values (see Environment below)
+npx prisma migrate deploy   # apply committed migrations
+npx prisma db seed          # demo users + quizzes
 npm run start:dev
 ```
 
@@ -30,16 +30,38 @@ App runs at **http://localhost:3000** (override with `PORT` in `.env`).
 
 ---
 
+## Demo accounts (from seed)
+
+After `npx prisma db seed`, log in via the frontend (`/login`) or `POST /auth/login`:
+
+| Role | Email | Password |
+| :--- | :--- | :--- |
+| Student | `assem.test@example.com` | `Student123!` |
+| Admin | `admin@example.com` | `Admin123!` |
+
+- Student is linked to seed UUID `11111111-1111-1111-1111-111111111111` and is enrolled in the demo quizzes.
+- Prefer JWT login. Mock headers (`x-student-id` / `x-admin-token`) still work as a DEV fallback (dual-mode).
+
+---
+
 ## Environment (`.env`)
+
+**Do not commit real `.env` files.** Share only `.env.example` in git. Teammates copy it and fill secrets locally (or receive secrets in a private channel — Discord DM / password manager — never in a PR).
+
+```bash
+cp .env.example .env
+# then set JWT_SECRET and ADMIN_API_TOKEN, e.g.:
+# openssl rand -hex 32
+```
 
 | Variable | Required | Description |
 | :--- | :--- | :--- |
 | `DATABASE_URL` | Yes | PostgreSQL connection string, e.g. `postgresql://USER@localhost:5432/qna?schema=public` |
-| `MOCK_STUDENT_ID` | Yes* | UUID used when no `x-student-id` header is sent. Must match seed student (see below). |
+| `JWT_SECRET` | Yes | Signs access tokens — backend refuses to start if missing |
+| `ADMIN_API_TOKEN` | Recommended | Dual-mode admin header fallback; match frontend `VITE_ADMIN_TOKEN` |
+| `MOCK_STUDENT_ID` | Optional | Dual-mode student header fallback (seed UUID below) |
 | `PORT` | No | HTTP port (default `3000`) |
 | `OPENAI_API_KEY` | For RAG | Only needed for ingestion/search modules |
-
-\*Required for local dashboard testing until Auth (Slot 1) is integrated.
 
 **Seed student UUID** (fixed in `prisma/seed.ts`):
 
@@ -84,30 +106,46 @@ npx prisma db seed
 
 **What it creates:**
 
-- 1 verified student (`11111111-1111-1111-1111-111111111111`)
-- 5 quizzes enrolled to that student — 4 **Published** (dashboard states) + 1 **Draft** (hidden from API)
-- Attempts so the API returns all four `studentState` values: `Not started`, `In progress`, `Submitted`, `Closed`
+- 1 verified student (`11111111-1111-1111-1111-111111111111`) + linked login `assem.test@example.com` / `Student123!`
+- 1 admin login `admin@example.com` / `Admin123!` (no student profile)
+- Demo quizzes enrolled to that student (published + draft samples, follow-up fixtures, etc.)
 
-Re-running seed **clears** quiz-related rows (students, enrollments, quizzes, attempts) and recreates them.
+Re-running seed **clears** users/students/quizzes/attempts (and related rows) and recreates them.
 
 ---
 
-## Student Quiz Access API
-
-Mock auth until real Auth lands: header `x-student-id` or fallback to `MOCK_STUDENT_ID`.
+## Auth API (preferred)
 
 ```bash
-# uses MOCK_STUDENT_ID from .env
-curl http://localhost:3000/student/quizzes
+# login
+curl -s -X POST http://localhost:3000/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"assem.test@example.com","password":"Student123!"}'
 
-# explicit student
-curl -H "x-student-id: 11111111-1111-1111-1111-111111111111" \
-  http://localhost:3000/student/quizzes
+# use the access_token
+curl http://localhost:3000/student/quizzes \
+  -H "Authorization: Bearer <access_token>"
+
+curl http://localhost:3000/admin/quizzes \
+  -H "Authorization: Bearer <admin_access_token>"
+
+curl http://localhost:3000/auth/me \
+  -H "Authorization: Bearer <access_token>"
 ```
 
-Response: `{ "quizzes": [{ quizId, title, description, closesAt, studentState, score, canStart, blockedReason? }] }`
+### Dual-mode fallbacks (DEV)
 
-Code: `src/modules/student-quizzes/`
+```bash
+# student mock
+curl -H "x-student-id: 11111111-1111-1111-1111-111111111111" \
+  http://localhost:3000/student/quizzes
+
+# admin shared secret
+curl -H "x-admin-token: $ADMIN_API_TOKEN" \
+  http://localhost:3000/admin/quizzes
+```
+
+Code: `src/auth/`, `src/modules/student-quizzes/`, admin guards under `src/modules/admin-quizzes/guards/`
 
 ---
 

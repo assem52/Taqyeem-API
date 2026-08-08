@@ -4,8 +4,10 @@ import { AdminInvitationStatusService } from './admin-invitation-status.service'
 import { StudentInvitationsController } from './student-invitations.controller';
 import { StudentInvitationsService } from './student-invitations.service';
 import { EmailService } from './email.service';
+import { AuthModule } from '../../auth/auth.module';
 
 @Module({
+  imports: [AuthModule],
   controllers: [
     AdminInvitationStatusController,
     StudentInvitationsController,
@@ -18,4 +20,3 @@ import { EmailService } from './email.service';
   exports: [EmailService, StudentInvitationsService],
 })
 export class InvitationsModule {}
-

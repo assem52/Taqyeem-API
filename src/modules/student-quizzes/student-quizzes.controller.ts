@@ -1,42 +1,29 @@
 import {
-  BadRequestException,
   Controller,
   Get,
-  Headers,
   Param,
-  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { StudentQuizzesService } from './student-quizzes.service';
+import { StudentAuthGuard } from '../../auth/guards/student-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('student/quizzes')
+@UseGuards(StudentAuthGuard)
 export class StudentQuizzesController {
   constructor(private readonly studentQuizzesService: StudentQuizzesService) {}
 
   @Get()
-  getDashboard(@Headers('x-student-id') studentId?: string) {
-    // TODO(Sprint 2 / Auth): replace with real session/JWT from Slot 1.
-    // x-student-id + MOCK_STUDENT_ID is a dev-only shim — not production auth.
-    const resolvedStudentId = studentId ?? process.env.MOCK_STUDENT_ID;
-    if (!resolvedStudentId) {
-      throw new UnauthorizedException(
-        'Missing student id. Send x-student-id header or set MOCK_STUDENT_ID.',
-      );
-    }
-    return this.studentQuizzesService.getDashboard(resolvedStudentId);
+  getDashboard(@CurrentUser('studentId') studentId: string) {
+    return this.studentQuizzesService.getDashboard(studentId);
   }
 
   @Get(':quizId/attempt')
   getAttempt(
     @Param('quizId') quizId: string,
-    @Headers('x-student-id') studentId?: string,
+    @CurrentUser('studentId') studentId: string,
   ) {
-    const resolvedStudentId = studentId ?? process.env.MOCK_STUDENT_ID;
-    if (!resolvedStudentId) {
-      throw new BadRequestException(
-        'Missing student id. Send x-student-id header or set MOCK_STUDENT_ID.',
-      );
-    }
-    return this.studentQuizzesService.getAttempt(resolvedStudentId, quizId);
+    return this.studentQuizzesService.getAttempt(studentId, quizId);
   }
 
   // Deep-link access check: a student opening a direct link to one quiz,
@@ -44,15 +31,8 @@ export class StudentQuizzesController {
   @Get(':quizId')
   getQuizAccess(
     @Param('quizId') quizId: string,
-    @Headers('x-student-id') studentId?: string,
+    @CurrentUser('studentId') studentId: string,
   ) {
-    const resolvedStudentId = studentId ?? process.env.MOCK_STUDENT_ID;
-    if (!resolvedStudentId) {
-      throw new UnauthorizedException(
-        'Missing student id. Send x-student-id header or set MOCK_STUDENT_ID.',
-      );
-    }
-    return this.studentQuizzesService.getQuizAccess(resolvedStudentId, quizId);
+    return this.studentQuizzesService.getQuizAccess(studentId, quizId);
   }
 }
-

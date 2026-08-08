@@ -1,4 +1,9 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
 @Injectable()
@@ -6,8 +11,12 @@ export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requiredRoles = this.reflector.get<string[]>('roles', context.getHandler());
-    if (!requiredRoles) {
+    // getAllAndOverride checks method first, then class — so @Roles on the controller works.
+    const requiredRoles = this.reflector.getAllAndOverride<string[]>('roles', [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!requiredRoles || requiredRoles.length === 0) {
       return true;
     }
     const request = context.switchToHttp().getRequest();
@@ -17,5 +26,5 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Access denied: Insufficient permissions');
     }
     return true;
-    }
+  }
 }
