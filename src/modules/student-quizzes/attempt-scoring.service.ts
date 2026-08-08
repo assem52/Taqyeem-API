@@ -151,7 +151,7 @@ export class AttemptScoringService {
         async (tx) => {
           const claimed = await tx.$executeRaw`
             UPDATE "Attempt" a
-            SET status = 'AUTO_SUBMITTED'::"AttemptStatus", "submittedAt" = NOW()
+            SET status = 'AUTO_SUBMITTED'::"AttemptStatus", "submitted_at" = NOW()
             FROM "Quiz" q
             WHERE a.id = ${attemptId}::uuid
               AND a."quizId" = q.id
@@ -262,7 +262,7 @@ export class AttemptScoringService {
         async (tx) => {
           const claimed = await tx.$executeRaw`
             UPDATE "Attempt"
-            SET status = 'SUBMITTED'::"AttemptStatus", "submittedAt" = NOW()
+            SET status = 'SUBMITTED'::"AttemptStatus", "submitted_at" = NOW()
             WHERE id = ${attemptId}::uuid AND "studentId" = ${studentId}::uuid AND status = 'IN_PROGRESS'::"AttemptStatus"
           `;
 
