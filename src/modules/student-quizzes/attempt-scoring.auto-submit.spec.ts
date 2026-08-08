@@ -91,6 +91,7 @@ describe('AttemptScoringService.autoSubmitIfExpired', () => {
     const sql = Array.isArray(sqlParts) ? sqlParts.join('') : String(sqlParts);
     expect(sql).toContain('AUTO_SUBMITTED');
     expect(sql).toContain('close_at');
+    expect(sql).toContain('submitted_at');
   });
 
   it('returns null, publishes nothing, and writes nothing for an attempt whose quiz has not closed yet', async () => {
