@@ -23,7 +23,7 @@ const FAILED_CAROL_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const LOW_SCORE_DAN_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const FLAGGED_EVE_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 const PASSED_FRANK_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
- 
+
 async function main() {
   await prisma.attempt.deleteMany();
   await prisma.enrollment.deleteMany();
@@ -162,10 +162,45 @@ async function main() {
       text: 'What is 2+2?',
       type: QuestionType.MCQ,
       points: 1,
+      position: 0,
       options: {
         create: [
-          { option: '3', isCorrect: false },
-          { option: '4', isCorrect: true },
+          { option: '3', isCorrect: false, position: 0 },
+          { option: '4', isCorrect: true, position: 1 },
+        ],
+      },
+    },
+  });
+
+  await prisma.question.create({
+    data: {
+      quizId: publishableDraft.id,
+      text: 'PostgreSQL is a relational database.',
+      type: QuestionType.TRUE_FALSE,
+      points: 1,
+      position: 1,
+      options: {
+        create: [
+          { option: 'True', isCorrect: true, position: 0 },
+          { option: 'False', isCorrect: false, position: 1 },
+        ],
+      },
+    },
+  });
+
+  // Hidden malformed data demonstrates that drafts can retain work-in-progress
+  // questions without allowing them into publishing or student snapshots.
+  await prisma.question.create({
+    data: {
+      quizId: publishableDraft.id,
+      text: 'Work in progress',
+      type: QuestionType.MCQ,
+      isHidden: true,
+      position: 2,
+      options: {
+        create: [
+          { option: '', isCorrect: false, position: 0 },
+          { option: '', isCorrect: false, position: 1 },
         ],
       },
     },
@@ -361,7 +396,9 @@ async function main() {
   console.log(`EMPTY_DRAFT_QUIZ_ID=${emptyDraft.id}`);
   console.log(`IN_PROGRESS_QUIZ_ID=${inProgressQuiz.id}`);
   console.log(`FOLLOW_UP_DEMO_QUIZ_ID=${followUpDemoQuiz.id}`);
-  console.log('Follow-up demo expected: 1 did-not-start, 1 in-progress, 1 failed, 1 low-score, 1 flagged (6 integrity events, threshold 5), 1 excluded');
+  console.log(
+    'Follow-up demo expected: 1 did-not-start, 1 in-progress, 1 failed, 1 low-score, 1 flagged (6 integrity events, threshold 5), 1 excluded',
+  );
 }
 
 main()

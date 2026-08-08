@@ -37,6 +37,15 @@ function createService() {
       count: jest.fn(),
       groupBy: jest.fn(),
     },
+    question: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+    quizOption: {
+      deleteMany: jest.fn(),
+    },
     $transaction: jest.fn(async (callback: (tx: unknown) => unknown) =>
       callback(prisma),
     ),
@@ -136,8 +145,13 @@ describe('AdminQuizzesService', () => {
         },
         include: {
           questions: {
-            include: { options: true },
-            orderBy: { id: 'asc' },
+            where: { deletedAt: null },
+            include: {
+              options: {
+                orderBy: [{ position: 'asc' }, { id: 'asc' }],
+              },
+            },
+            orderBy: [{ position: 'asc' }, { id: 'asc' }],
           },
         },
         orderBy: { createdAt: 'desc' },
@@ -270,17 +284,19 @@ describe('AdminQuizzesService', () => {
       prisma.quiz.findUnique.mockResolvedValue({ id: 'unlocked-q' });
       prisma.quiz.update.mockResolvedValue({ id: 'unlocked-q' });
 
-      prisma.quiz.findUnique.mockResolvedValueOnce({ id: 'unlocked-q' }).mockResolvedValueOnce({
-        id: 'unlocked-q',
-        title: 'Updated Quiz',
-        description: 'New Description',
-        status: QuizStatus.DRAFT,
-        openDate: now,
-        closesAt: nextWeek,
-        duration: 120,
-        passScore: 85,
-        questions: [validQuestion],
-      });
+      prisma.quiz.findUnique
+        .mockResolvedValueOnce({ id: 'unlocked-q' })
+        .mockResolvedValueOnce({
+          id: 'unlocked-q',
+          title: 'Updated Quiz',
+          description: 'New Description',
+          status: QuizStatus.DRAFT,
+          openDate: now,
+          closesAt: nextWeek,
+          duration: 120,
+          passScore: 85,
+          questions: [validQuestion],
+        });
 
       const result = await service.updateQuiz('unlocked-q', {
         title: 'Updated Quiz',
@@ -328,6 +344,120 @@ describe('AdminQuizzesService', () => {
 
       await expect(service.getQuizForAdmin('missing')).rejects.toThrow(
         NotFoundException,
+      );
+    });
+  });
+
+  describe('question bank mutations', () => {
+    it('uses the shared attempt lock for question creation', async () => {
+      const { service, prisma } = createService();
+      prisma.quiz.findUnique.mockResolvedValue({ id: lockedQuizId });
+      prisma.attempt.count.mockResolvedValue(1);
+
+      await expect(
+        service.createQuestion(lockedQuizId, {
+          text: 'Locked',
+          type: QuestionType.MCQ,
+          options: [
+            { option: 'A', isCorrect: true },
+            { option: 'B', isCorrect: false },
+          ],
+        }),
+      ).rejects.toThrow(ATTEMPT_LOCK_MESSAGE);
+    });
+
+    it('rejects a question id owned by another quiz', async () => {
+      const { service, prisma } = createService();
+      prisma.quiz.findUnique.mockResolvedValue({ id: 'quiz-a' });
+      prisma.attempt.count.mockResolvedValue(0);
+      prisma.question.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateQuestion('quiz-a', 'question-from-b', {
+          text: 'Changed',
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('reorders every active question transactionally', async () => {
+      const { service, prisma } = createService();
+      prisma.quiz.findUnique.mockResolvedValue({ id: 'quiz-a' });
+      prisma.attempt.count.mockResolvedValue(0);
+      prisma.question.findMany
+        .mockResolvedValueOnce([{ id: 'q1' }, { id: 'q2' }])
+        .mockResolvedValueOnce([]);
+
+      await service.reorderQuestions('quiz-a', {
+        questionIds: ['q2', 'q1'],
+      });
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.question.update).toHaveBeenCalledWith({
+        where: { id: 'q2' },
+        data: { position: 0 },
+      });
+      expect(prisma.question.update).toHaveBeenCalledWith({
+        where: { id: 'q1' },
+        data: { position: 1 },
+      });
+    });
+
+    it('soft-deletes instead of physically deleting a question', async () => {
+      const { service, prisma } = createService();
+      prisma.quiz.findUnique.mockResolvedValue({ id: 'quiz-a' });
+      prisma.attempt.count.mockResolvedValue(0);
+      prisma.question.findFirst.mockResolvedValue({
+        ...validQuestion,
+        quizId: 'quiz-a',
+      });
+
+      await service.removeQuestion('quiz-a', 'q1');
+
+      expect(prisma.question.update).toHaveBeenCalledWith({
+        where: { id: 'q1' },
+        data: { deletedAt: expect.any(Date), isHidden: true },
+      });
+      expect(prisma.quiz.delete).not.toHaveBeenCalled();
+    });
+
+    it('duplicates active content into an independent draft', async () => {
+      const { service, prisma } = createService();
+      const now = new Date();
+      prisma.quiz.findUnique.mockResolvedValue({
+        id: 'source',
+        title: 'Source',
+        description: 'Description',
+        instructions: 'Instructions',
+        openDate: now,
+        closesAt: now,
+        duration: 30,
+        passScore: 70,
+        integrityThreshold: 5,
+        questions: [{ ...validQuestion, position: 0 }],
+      });
+      prisma.quiz.create.mockResolvedValue({
+        id: 'copy',
+        title: 'Source (Copy)',
+        description: 'Description',
+        status: QuizStatus.DRAFT,
+        openDate: now,
+        closesAt: now,
+        duration: 30,
+        passScore: 70,
+        questions: [],
+      });
+
+      const result = await service.duplicateQuiz('source', {});
+
+      expect(result.quizId).toBe('copy');
+      expect(result.status).toBe(QuizStatus.DRAFT);
+      expect(prisma.quiz.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: QuizStatus.DRAFT,
+            questions: expect.any(Object),
+          }),
+        }),
       );
     });
   });

@@ -2,6 +2,7 @@ export class AdminQuizOptionDto {
   optionId: string;
   option: string;
   isCorrect: boolean;
+  position: number;
 }
 
 export class AdminQuizQuestionDto {
@@ -10,6 +11,7 @@ export class AdminQuizQuestionDto {
   type: string;
   points: number;
   isHidden: boolean;
+  position: number;
   options: AdminQuizOptionDto[];
 }
 

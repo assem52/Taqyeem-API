@@ -5,7 +5,12 @@ function buildPrismaMock() {
     student: { findUnique: jest.fn() },
     quiz: { findUnique: jest.fn() },
     enrollment: { findUnique: jest.fn() },
-    attempt: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn() },
+    attempt: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      findMany: jest.fn(),
+    },
     question: { findMany: jest.fn() },
     $executeRaw: jest.fn(),
     $transaction: jest.fn(),
@@ -28,6 +33,18 @@ const QUESTIONS = [
     ],
   },
 ];
+const QUESTION_SNAPSHOT = [
+  {
+    questionId: 'question-1',
+    text: 'What is 2+2?',
+    type: 'MCQ',
+    points: 1,
+    options: [
+      { id: 'opt-a', option: '3', isCorrect: false },
+      { id: 'opt-b', option: '4', isCorrect: true },
+    ],
+  },
+];
 
 describe('AttemptScoringService.autoSubmitIfExpired', () => {
   let eventsMock: any;
@@ -44,7 +61,10 @@ describe('AttemptScoringService.autoSubmitIfExpired', () => {
       studentId: 's1',
       quizId: 'q1',
       quiz: QUIZ_WITH_ONE_QUESTION,
-      attemptAnswers: { 'question-1': { selectedOptionId: 'opt-b', answeredAt: '2026-01-01' } },
+      questionSnapshot: QUESTION_SNAPSHOT,
+      attemptAnswers: {
+        'question-1': { selectedOptionId: 'opt-b', answeredAt: '2026-01-01' },
+      },
       submittedAt: new Date('2026-01-01T00:05:00Z'),
     });
     prisma.question.findMany.mockResolvedValue(QUESTIONS);
@@ -57,6 +77,7 @@ describe('AttemptScoringService.autoSubmitIfExpired', () => {
     expect(score!.rawScore).toBe(1);
     expect(score!.maxScore).toBe(1);
     expect(score!.percentage).toBe(100);
+    expect(prisma.question.findMany).not.toHaveBeenCalled();
     expect(eventsMock.publish).toHaveBeenCalledWith(
       'slot1.quiz.attempt.scored',
       expect.objectContaining({ attemptId: 'expired-attempt' }),
@@ -102,7 +123,9 @@ describe('AttemptScoringService.autoSubmitIfExpired', () => {
     prisma.$executeRaw.mockResolvedValue(0);
 
     const service = new AttemptScoringService(prisma as any, eventsMock);
-    await expect(service.autoSubmitIfExpired('does-not-exist')).resolves.toBeNull();
+    await expect(
+      service.autoSubmitIfExpired('does-not-exist'),
+    ).resolves.toBeNull();
   });
 });
 
@@ -131,6 +154,7 @@ describe('AttemptScoringService.sweepExpiredAttemptsForQuiz', () => {
       studentId: 's1',
       quizId: 'q1',
       quiz: QUIZ_WITH_ONE_QUESTION,
+      questionSnapshot: QUESTION_SNAPSHOT,
       attemptAnswers: {},
       submittedAt: new Date(),
     });

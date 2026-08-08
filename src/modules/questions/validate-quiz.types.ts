@@ -16,6 +16,7 @@ export type QuestionForValidation = {
   text: string;
   type: QuestionTypeForValidation;
   isHidden: boolean;
+  deletedAt?: Date | string | null;
   options: QuizOptionForValidation[];
 };
 
