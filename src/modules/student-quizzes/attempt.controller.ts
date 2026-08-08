@@ -2,35 +2,29 @@ import {
   BadRequestException,
   Body,
   Controller,
-  Headers,
   Param,
   Post,
   Put,
-  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { AttemptScoringService } from './attempt-scoring.service';
+import { StudentAuthGuard } from '../../auth/guards/student-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('attempts')
+@UseGuards(StudentAuthGuard)
 export class AttemptController {
   constructor(private readonly attemptScoringService: AttemptScoringService) {}
 
-  // Same dev-mode identity shim used everywhere else in this codebase —
-  // see TODO(Sprint 2 / Auth) in student-quizzes.controller.ts.
   @Post()
   async start(
     @Body('quizId') quizId: string,
-    @Headers('x-student-id') studentId?: string,
+    @CurrentUser('studentId') studentId: string,
   ) {
-    const resolvedStudentId = studentId ?? process.env.MOCK_STUDENT_ID;
-    if (!resolvedStudentId) {
-      throw new BadRequestException(
-        'Missing student id. Send x-student-id header or set MOCK_STUDENT_ID.',
-      );
-    }
     if (!quizId) {
       throw new BadRequestException('quizId is required.');
     }
-    return this.attemptScoringService.startAttempt(resolvedStudentId, quizId);
+    return this.attemptScoringService.startAttempt(studentId, quizId);
   }
 
   @Put(':attemptId/answers/:questionId')
@@ -38,30 +32,26 @@ export class AttemptController {
     @Param('attemptId') attemptId: string,
     @Param('questionId') questionId: string,
     @Body('selectedOptionId') selectedOptionId: string | null,
-    @Headers('x-student-id') studentId?: string,
+    @CurrentUser('studentId') studentId: string,
   ) {
-    const resolvedStudentId = studentId ?? process.env.MOCK_STUDENT_ID;
-    if (!resolvedStudentId) {
-      throw new UnauthorizedException(
-        'Missing student id. Send x-student-id header or set MOCK_STUDENT_ID.',
-      );
-    }
-    await this.attemptScoringService.saveAnswer(attemptId, resolvedStudentId, questionId, selectedOptionId);
+    await this.attemptScoringService.saveAnswer(
+      attemptId,
+      studentId,
+      questionId,
+      selectedOptionId,
+    );
     return { saved: true };
   }
 
   @Post(':attemptId/submit')
   async submit(
     @Param('attemptId') attemptId: string,
-    @Headers('x-student-id') studentId?: string,
+    @CurrentUser('studentId') studentId: string,
   ) {
-    const resolvedStudentId = studentId ?? process.env.MOCK_STUDENT_ID;
-    if (!resolvedStudentId) {
-      throw new UnauthorizedException(
-        'Missing student id. Send x-student-id header or set MOCK_STUDENT_ID.',
-      );
-    }
-    const score = await this.attemptScoringService.submitAttempt(attemptId, resolvedStudentId);
+    const score = await this.attemptScoringService.submitAttempt(
+      attemptId,
+      studentId,
+    );
     return { score };
   }
 }

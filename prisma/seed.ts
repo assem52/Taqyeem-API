@@ -4,10 +4,17 @@ import {
   PrismaClient,
   QuestionType,
   QuizStatus,
+  Role,
   StudentStatus,
 } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
+
+const DEMO_STUDENT_EMAIL = 'assem.test@example.com';
+const DEMO_STUDENT_PASSWORD = 'Student123!';
+const DEMO_ADMIN_EMAIL = 'admin@example.com';
+const DEMO_ADMIN_PASSWORD = 'Admin123!';
 
 const VERIFIED_STUDENT_ID = '11111111-1111-1111-1111-111111111111';
 const PUBLISHABLE_DRAFT_ID = '22222222-2222-2222-2222-222222222222';
@@ -30,13 +37,40 @@ async function main() {
   await prisma.quizOption.deleteMany();
   await prisma.question.deleteMany();
   await prisma.quiz.deleteMany();
+  // Users may FK to Student — clear auth rows before deleting students.
+  await prisma.user.deleteMany();
   await prisma.student.deleteMany();
 
   const student = await prisma.student.create({
     data: {
       id: VERIFIED_STUDENT_ID,
       name: 'Assem Test',
-      email: 'assem.test@example.com',
+      email: DEMO_STUDENT_EMAIL,
+      status: StudentStatus.VERIFIED,
+    },
+  });
+
+  // Linked auth accounts so login works without mock headers.
+  const studentPasswordHash = await bcrypt.hash(DEMO_STUDENT_PASSWORD, 10);
+  const adminPasswordHash = await bcrypt.hash(DEMO_ADMIN_PASSWORD, 10);
+
+  await prisma.user.create({
+    data: {
+      name: 'Assem Test',
+      email: DEMO_STUDENT_EMAIL,
+      password: studentPasswordHash,
+      role: Role.STUDENT,
+      status: StudentStatus.VERIFIED,
+      studentId: student.id,
+    },
+  });
+
+  await prisma.user.create({
+    data: {
+      name: 'Demo Admin',
+      email: DEMO_ADMIN_EMAIL,
+      password: adminPasswordHash,
+      role: Role.ADMIN,
       status: StudentStatus.VERIFIED,
     },
   });
@@ -391,6 +425,8 @@ async function main() {
 
   console.log('Seed complete.');
   console.log(`MOCK_STUDENT_ID=${student.id}`);
+  console.log(`DEMO_STUDENT_LOGIN=${DEMO_STUDENT_EMAIL} / ${DEMO_STUDENT_PASSWORD}`);
+  console.log(`DEMO_ADMIN_LOGIN=${DEMO_ADMIN_EMAIL} / ${DEMO_ADMIN_PASSWORD}`);
   console.log(`PUBLISHABLE_DRAFT_QUIZ_ID=${publishableDraft.id}`);
   console.log(`INVALID_DRAFT_QUIZ_ID=${invalidDraft.id}`);
   console.log(`EMPTY_DRAFT_QUIZ_ID=${emptyDraft.id}`);

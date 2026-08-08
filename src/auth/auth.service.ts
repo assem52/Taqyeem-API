@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   BadRequestException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { JwtService } from '@nestjs/jwt';
@@ -13,6 +14,8 @@ import { LoginDto } from './dto/login.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -22,11 +25,17 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
+  /**
+   * Register creates BOTH a Student (quiz domain) and a User (auth domain),
+   * linked by User.studentId. If a Student already exists for that email
+   * (e.g. from seed/invite flow), we reuse it instead of duplicating.
+   */
   async register(dto: RegisterDto) {
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-    });
+    const email = normalizeEmail(dto.email);
 
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+    });
     if (existingUser) {
       throw new BadRequestException('Email is already in use.');
     }
@@ -35,21 +44,36 @@ export class AuthService {
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    const user = await this.prisma.user.create({
-      data: {
-        name: dto.name,
-        email: dto.email,
-        password: hashedPassword,
-        role: 'STUDENT',
-        status: 'UNVERIFIED',
-        verificationToken,
-        tokenExpiresAt,
-      },
+    const user = await this.prisma.$transaction(async (tx) => {
+      let student = await tx.student.findUnique({ where: { email } });
+
+      if (!student) {
+        student = await tx.student.create({
+          data: {
+            name: dto.name,
+            email,
+            status: 'UNVERIFIED',
+          },
+        });
+      }
+
+      return tx.user.create({
+        data: {
+          name: dto.name,
+          email,
+          password: hashedPassword,
+          role: 'STUDENT',
+          status: 'UNVERIFIED',
+          verificationToken,
+          tokenExpiresAt,
+          studentId: student.id,
+        },
+      });
     });
 
     if (process.env.NODE_ENV !== 'production') {
       this.logger.debug(
-        `[DEV] Verification link for ${user.email}: /auth/verify?token=${verificationToken}`,
+        `[DEV] Verification for ${user.email}: POST /auth/verify { email, token: "${verificationToken}" }`,
       );
     }
 
@@ -60,8 +84,9 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
+    const email = normalizeEmail(dto.email);
     const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+      where: { email },
     });
 
     if (!user) {
@@ -73,12 +98,23 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password.');
     }
 
+    // JWT payload stays small; studentId is also returned in the body for routing.
     const payload = { sub: user.id, email: user.email, role: user.role };
     const accessToken = this.jwtService.sign(payload);
 
     return {
       access_token: accessToken,
+      role: user.role,
       status: user.status,
+      studentId: user.studentId,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        status: user.status,
+        studentId: user.studentId,
+      },
       message:
         user.status === 'UNVERIFIED'
           ? 'Your account is unverified. Please verify your email to access quizzes.'
@@ -86,10 +122,31 @@ export class AuthService {
     };
   }
 
+  async me(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        status: true,
+        studentId: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found.');
+    }
+
+    return user;
+  }
+
   async verifyEmail(dto: VerifyEmailDto) {
+    const email = normalizeEmail(dto.email);
     const user = await this.prisma.user.findFirst({
       where: {
-        email: dto.email,
+        email,
         verificationToken: dto.token,
       },
     });
@@ -102,21 +159,32 @@ export class AuthService {
       throw new BadRequestException('Verification token has expired.');
     }
 
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        status: 'VERIFIED',
-        verificationToken: null,
-        tokenExpiresAt: null,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          status: 'VERIFIED',
+          verificationToken: null,
+          tokenExpiresAt: null,
+        },
+      });
+
+      // Keep Student.status in sync — student quiz access checks Student.status.
+      if (user.studentId) {
+        await tx.student.update({
+          where: { id: user.studentId },
+          data: { status: 'VERIFIED' },
+        });
+      }
     });
 
     return { message: 'Email verified successfully.' };
   }
 
   async resendVerification(dto: ResendVerificationDto) {
+    const email = normalizeEmail(dto.email);
     const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+      where: { email },
     });
 
     if (!user || user.status === 'VERIFIED') {
@@ -139,7 +207,7 @@ export class AuthService {
 
     if (process.env.NODE_ENV !== 'production') {
       this.logger.debug(
-        `[DEV] New verification link for ${dto.email}: /auth/verify?token=${verificationToken}`,
+        `[DEV] New verification for ${email}: POST /auth/verify { email, token: "${verificationToken}" }`,
       );
     }
 
