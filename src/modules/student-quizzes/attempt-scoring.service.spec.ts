@@ -11,7 +11,13 @@ function buildPrismaMock() {
     student: { findUnique: jest.fn() },
     quiz: { findUnique: jest.fn() },
     enrollment: { findUnique: jest.fn() },
-    attempt: { findUnique: jest.fn(), create: jest.fn() },
+    attempt: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+    $executeRaw: jest.fn(),
+    $transaction: jest.fn(),
   };
 }
 
@@ -232,5 +238,35 @@ describe('AttemptScoringService.startAttempt', () => {
       attemptId: 'winner-attempt',
       status: 'IN_PROGRESS',
     });
+  });
+});
+describe('AttemptScoringService.submitAttempt', () => {
+  it('uses the mapped submitted_at column when claiming a manual submission', async () => {
+    const prisma = buildPrismaMock();
+    const eventsMock = { publish: jest.fn() };
+
+    prisma.$transaction.mockImplementation(async (fn: any) => fn(prisma));
+    prisma.$executeRaw.mockResolvedValue(1);
+
+    prisma.attempt.findUnique.mockResolvedValue({
+      id: 'attempt-1',
+      studentId: 's1',
+      quizId: 'q1',
+      questionSnapshot: [],
+      attemptAnswers: {},
+      submittedAt: new Date(),
+      quiz: { passScore: null },
+    });
+
+    prisma.attempt.update.mockResolvedValue({});
+
+    const service = new AttemptScoringService(prisma as any, eventsMock as any);
+    await service.submitAttempt('attempt-1', 's1');
+
+    const [sqlParts] = prisma.$executeRaw.mock.calls[0];
+    const sql = Array.isArray(sqlParts) ? sqlParts.join('') : String(sqlParts);
+
+    expect(sql).toContain('SUBMITTED');
+    expect(sql).toContain('submitted_at');
   });
 });
