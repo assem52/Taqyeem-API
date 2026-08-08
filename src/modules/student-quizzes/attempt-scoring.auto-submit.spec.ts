@@ -181,3 +181,30 @@ describe('AttemptScoringService.sweepExpiredAttemptsForQuiz', () => {
     expect(result).toEqual({ autoSubmittedCount: 0 });
   });
 });
+
+describe('AttemptScoringService.sweepExpiredAttemptsForQuiz resilience', () => {
+  it('continues processing later attempts when one attempt fails', async () => {
+    const prisma = buildPrismaMock();
+    const eventsMock = { publish: jest.fn() };
+
+    prisma.attempt.findMany.mockResolvedValue([
+      { id: 'broken-attempt' },
+      { id: 'healthy-attempt' },
+    ]);
+
+    const service = new AttemptScoringService(prisma as any, eventsMock as any);
+
+    const error = new Error('broken attempt');
+
+    const autoSubmitSpy = jest
+      .spyOn(service, 'autoSubmitIfExpired')
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce(null);
+
+    await expect(service.sweepExpiredAttemptsForQuiz('q1')).rejects.toBe(error);
+
+    expect(autoSubmitSpy).toHaveBeenCalledTimes(2);
+    expect(autoSubmitSpy).toHaveBeenNthCalledWith(1, 'broken-attempt');
+    expect(autoSubmitSpy).toHaveBeenNthCalledWith(2, 'healthy-attempt');
+  });
+});

@@ -197,9 +197,19 @@ export class AttemptScoringService {
     });
 
     let autoSubmittedCount = 0;
+    let firstError: unknown = null;
+
     for (const candidate of candidates) {
-      const result = await this.autoSubmitIfExpired(candidate.id);
-      if (result) autoSubmittedCount += 1;
+      try {
+        const result = await this.autoSubmitIfExpired(candidate.id);
+        if (result) autoSubmittedCount += 1;
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+
+    if (firstError) {
+      throw firstError;
     }
 
     return { autoSubmittedCount };
@@ -217,19 +227,25 @@ export class AttemptScoringService {
     });
 
     const affected = await this.prisma.$executeRaw`
-      UPDATE "Attempt"
+      UPDATE "Attempt" a
       SET "attemptAnswers" = jsonb_set(
-        COALESCE("attemptAnswers", '{}'::jsonb),
+        COALESCE(a."attemptAnswers", '{}'::jsonb),
         ARRAY[${questionId}]::text[],
         ${entry}::jsonb,
         true
       )
-      WHERE id = ${attemptId}::uuid AND "studentId" = ${studentId}::uuid AND status = 'IN_PROGRESS'::"AttemptStatus"
+      FROM "Quiz" q
+      WHERE a.id = ${attemptId}::uuid
+        AND a."studentId" = ${studentId}::uuid
+        AND a.status = 'IN_PROGRESS'::"AttemptStatus"
+        AND a."quizId" = q.id
+        AND q."close_at" > NOW()
     `;
 
     if (affected === 0) {
       const attempt = await this.prisma.attempt.findUnique({
         where: { id: attemptId },
+        include: { quiz: true },
       });
       if (attempt && attempt.studentId !== studentId) {
         throw new ForbiddenException('Not authorized to access this attempt');
@@ -237,6 +253,17 @@ export class AttemptScoringService {
       if (!attempt) {
         throw new NotFoundException('Attempt not found');
       }
+
+      if (
+        attempt.status === 'IN_PROGRESS' &&
+        attempt.quiz.closesAt <= new Date()
+      ) {
+        await this.autoSubmitIfExpired(attemptId);
+        throw new ConflictException(
+          'Quiz deadline has passed; attempt was auto-submitted',
+        );
+      }
+
       throw new ConflictException('Cannot change answers after submission');
     }
 
@@ -261,9 +288,18 @@ export class AttemptScoringService {
       result = await this.prisma.$transaction(
         async (tx) => {
           const claimed = await tx.$executeRaw`
-            UPDATE "Attempt"
-            SET status = 'SUBMITTED'::"AttemptStatus", "submitted_at" = NOW()
-            WHERE id = ${attemptId}::uuid AND "studentId" = ${studentId}::uuid AND status = 'IN_PROGRESS'::"AttemptStatus"
+            UPDATE "Attempt" a
+            SET status = CASE
+              WHEN q."close_at" <= NOW()
+                THEN 'AUTO_SUBMITTED'::"AttemptStatus"
+              ELSE 'SUBMITTED'::"AttemptStatus"
+            END,
+            "submitted_at" = NOW()
+            FROM "Quiz" q
+            WHERE a.id = ${attemptId}::uuid
+              AND a."studentId" = ${studentId}::uuid
+              AND a."quizId" = q.id
+              AND a.status = 'IN_PROGRESS'::"AttemptStatus"
           `;
 
           if (claimed === 0) {
