@@ -135,6 +135,7 @@ export class AuthService {
     // JWT payload stays small; studentId is also returned in the body for routing.
     const payload = { sub: user.id, email: user.email, role: user.role };
     const accessToken = this.jwtService.sign(payload);
+
     return {
       access_token: accessToken,
       role: user.role,

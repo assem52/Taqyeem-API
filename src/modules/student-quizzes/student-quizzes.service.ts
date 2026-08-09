@@ -120,7 +120,7 @@ export class StudentQuizzesService {
 
     const quiz = await this.prisma.quiz.findUnique({ where: { id: quizId } });
     if (!quiz || quiz.status !== 'PUBLISHED') {
-      throw new NotFoundException('This quiz link is invalid...');
+      throw new NotFoundException('This quiz link is invalid.');
     }
 
     const enrollment = await this.prisma.enrollment.findUnique({

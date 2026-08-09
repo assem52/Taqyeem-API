@@ -35,8 +35,8 @@ This document provides a comprehensive API Audit and Documentation for the **Stu
 ### Endpoint: `GET /student/quizzes`
 - **Owner**: Learner 4
 - **Task**: Dashboard
-- **Authentication**: Requires JWT Access Token (`Authorization: Bearer <jwtToken>`). Guarded by `StudentAuthGuard`.
-- **Parameters**: None (Student ID is derived server-side from JWT payload).
+- **Authentication**: Requires JWT Access Token (`Authorization: Bearer <jwtToken>`). Guarded by `StudentAuthGuard` (see Note 4 in [Security Notes](#14-security-notes) regarding the current identity fallback).
+- **Parameters**: None (Student ID is derived server-side by `StudentAuthGuard`).
 - **Request Body**: N/A
 - **Response Structure**:
   ```json
@@ -60,7 +60,7 @@ This document provides a comprehensive API Audit and Documentation for the **Stu
   }
   ```
 - **Error Responses**:
-  - `401 Unauthorized`: Token missing, invalid, or expired.
+  - `401 Unauthorized`: Missing student identity or unauthenticated (`"Missing student identity. Log in, or send x-student-id / set MOCK_STUDENT_ID in development."`).
   - `404 Not Found`: Student profile not found for authenticated user.
 - **Frontend Usage**:
   - **File**: `src/features/studentQuizzes/studentQuizzesApi.js`
@@ -74,7 +74,7 @@ This document provides a comprehensive API Audit and Documentation for the **Stu
 ### Endpoint: `GET /student/quizzes/:quizId`
 - **Owner**: Learner 4
 - **Task**: Quiz Instructions & Access Check
-- **Authentication**: Requires JWT Access Token (`Authorization: Bearer <jwtToken>`). Guarded by `StudentAuthGuard`.
+- **Authentication**: Requires JWT Access Token (`Authorization: Bearer <jwtToken>`). Guarded by `StudentAuthGuard` (see Note 4 in [Security Notes](#14-security-notes) regarding the current identity fallback).
 - **Parameters**:
   - `quizId` (Path Parameter, String UUID): Unique identifier of the target quiz.
 - **Request Body**: N/A
@@ -139,7 +139,7 @@ This document provides a comprehensive API Audit and Documentation for the **Stu
 ### Endpoint: `POST /student/invitations/:token/accept`
 - **Owner**: Learner 2
 - **Task**: Accept Invitation & Create Enrollment
-- **Authentication**: Requires JWT Access Token (`Authorization: Bearer <jwtToken>`). Guarded by `StudentAuthGuard`.
+- **Authentication**: Requires JWT Access Token (`Authorization: Bearer <jwtToken>`). Guarded by `StudentAuthGuard` (see Note 4 in [Security Notes](#14-security-notes) regarding the current identity fallback).
 - **Parameters**:
   - `token` (Path Parameter, String UUID): Invitation token ID.
 - **Request Body**: N/A
@@ -167,7 +167,7 @@ This document provides a comprehensive API Audit and Documentation for the **Stu
 ### Endpoint: `POST /attempts`
 - **Owner**: Learner 5
 - **Task**: Start / Retrieve In-Progress Attempt
-- **Authentication**: Requires JWT Access Token (`Authorization: Bearer <jwtToken>`). Guarded by `StudentAuthGuard`.
+- **Authentication**: Requires JWT Access Token (`Authorization: Bearer <jwtToken>`). Guarded by `StudentAuthGuard` (see Note 4 in [Security Notes](#14-security-notes) regarding the current identity fallback).
 - **Parameters**: None.
 - **Request Body**:
   ```json
@@ -199,7 +199,7 @@ This document provides a comprehensive API Audit and Documentation for the **Stu
 ### Endpoint: `GET /student/quizzes/:quizId/attempt`
 - **Owner**: Learner 5 (Data delivery via Learner 4 router prefix)
 - **Task**: Fetch Attempt Questions & Saved Answers
-- **Authentication**: Requires JWT Access Token (`Authorization: Bearer <jwtToken>`). Guarded by `StudentAuthGuard`.
+- **Authentication**: Requires JWT Access Token (`Authorization: Bearer <jwtToken>`). Guarded by `StudentAuthGuard` (see Note 4 in [Security Notes](#14-security-notes) regarding the current identity fallback).
 - **Parameters**:
   - `quizId` (Path Parameter, String UUID): Unique quiz identifier.
 - **Request Body**: N/A
@@ -244,7 +244,7 @@ This document provides a comprehensive API Audit and Documentation for the **Stu
 ### Endpoint: `PUT /attempts/:attemptId/answers/:questionId`
 - **Owner**: Learner 5
 - **Task**: Save Individual Answer Choice / Text Continuously
-- **Authentication**: Requires JWT Access Token (`Authorization: Bearer <jwtToken>`). Guarded by `StudentAuthGuard`.
+- **Authentication**: Requires JWT Access Token (`Authorization: Bearer <jwtToken>`). Guarded by `StudentAuthGuard` (see Note 4 in [Security Notes](#14-security-notes) regarding the current identity fallback).
 - **Parameters**:
   - `attemptId` (Path Parameter, String UUID): Attempt ID.
   - `questionId` (Path Parameter, String UUID): Target Question ID.
@@ -284,7 +284,7 @@ Resuming an attempt relies on the combination of:
 ### Endpoint: `POST /attempts/:attemptId/submit`
 - **Owner**: Learner 5
 - **Task**: Submit Attempt & Calculate Score
-- **Authentication**: Requires JWT Access Token (`Authorization: Bearer <jwtToken>`). Guarded by `StudentAuthGuard`.
+- **Authentication**: Requires JWT Access Token (`Authorization: Bearer <jwtToken>`). Guarded by `StudentAuthGuard` (see Note 4 in [Security Notes](#14-security-notes) regarding the current identity fallback).
 - **Parameters**:
   - `attemptId` (Path Parameter, String UUID): Attempt ID to submit.
 - **Request Body**: N/A
@@ -310,7 +310,35 @@ Resuming an attempt relies on the combination of:
 
 ---
 
-## 8. Notification / Invitation State APIs
+## 8. User Profile API (`GET /auth/me`)
+
+### Endpoint: `GET /auth/me`
+- **Owner**: Auth / Shared
+- **Task**: Fetch Authenticated User Profile & Student Identity
+- **Authentication**: Guarded by `AuthGuard('jwt')`. Requires JWT Access Token (`Authorization: Bearer <jwtToken>`).
+- **Parameters**: None.
+- **Request Body**: N/A
+- **Response Structure**:
+  ```json
+  {
+    "id": "user-uuid-1234",
+    "email": "student@example.com",
+    "name": "Mohamed Haitham",
+    "role": "STUDENT",
+    "status": "VERIFIED",
+    "studentId": "student-uuid-5678"
+  }
+  ```
+- **Error Responses**:
+  - `401 Unauthorized`: Token missing, invalid, or expired.
+- **Frontend Usage**:
+  - **File**: `src/features/auth/authApi.js`
+  - **Hook**: `useGetMeQuery()`
+  - **Components**: `RequireRole`, `VerifyEmailGate`.
+
+---
+
+## 9. Notification / Invitation State APIs
 
 ### Handled State Transitions:
 1. **Invitation Accepted**: Handled by `POST /student/invitations/:token/accept` which creates an `Enrollment` record.
@@ -318,7 +346,7 @@ Resuming an attempt relies on the combination of:
 
 ---
 
-## 9. Complete Student Flow
+## 10. Complete Student Flow
 
 ```text
 User Registration / Login
@@ -383,7 +411,7 @@ Displays score & submission confirmation
 
 ---
 
-## 10. Acceptance Criteria Mapping
+## 11. Acceptance Criteria Mapping
 
 | Acceptance Criterion | API Endpoint | Owner | Status | Evidence |
 | :--- | :--- | :--- | :--- | :--- |
@@ -396,13 +424,13 @@ Displays score & submission confirmation
 
 ---
 
-## 11. Missing / Unimplemented APIs
+## 12. Missing / Unimplemented APIs
 
 None. All required endpoints for Student Entry, Gateway Instructions, Invitation Lookup/Acceptance, Attempt Creation, Question Snapshot, Continuous Saving, Resume, and Single Submission exist and are fully integrated.
 
 ---
 
-## 12. Frontend Integration Map
+## 13. Frontend Integration Map
 
 | API Endpoint | Backend Controller File | Frontend API Hook | Frontend Page / Component | Owner | Purpose |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -417,10 +445,10 @@ None. All required endpoints for Student Entry, Gateway Instructions, Invitation
 
 ---
 
-## 13. Security Notes
+## 14. Security Notes
 
 1. **Student Authorization & Enrollment Enforcement**:
-   - `GET /student/quizzes` derives `studentId` from the verified JWT payload (`@CurrentUser('studentId')`). Students cannot pass another student's ID in the request.
+   - `GET /student/quizzes` derives `studentId` from `StudentAuthGuard`. Students cannot pass another student's ID in the request payload.
    - `GET /student/quizzes/:quizId` checks if an `Enrollment` row exists for `(quizId, studentId)`. If not, returns `403 Forbidden` (`"You have not been invited to this quiz."`).
    - If Student A attempts to access Quiz B assigned to Student B, `StudentQuizzesService` throws `ForbiddenException`.
 
@@ -430,3 +458,11 @@ None. All required endpoints for Student Entry, Gateway Instructions, Invitation
 3. **Attempt & Submission Concurrency Protection**:
    - `POST /attempts` uses a database transaction and unique constraint on `(quizId, studentId)` to prevent duplicate active attempts.
    - `POST /attempts/:attemptId/submit` uses an atomic `UPDATE` with `WHERE status = 'IN_PROGRESS'` to ensure an attempt can be submitted and scored exactly once.
+
+4. **Student Authentication Guard Implementation Details (`StudentAuthGuard`)**:
+   - Student endpoints are protected by `StudentAuthGuard`.
+   - **Authentication Resolution Logic**:
+     1. **Bearer Token Check**: If an `Authorization: Bearer <jwtToken>` header is present, `StudentAuthGuard` delegates to Passport JWT strategy to validate the token, and requires `request.user.studentId` to exist.
+     2. **Header / Env Fallback**: If NO `Bearer` header is provided, `StudentAuthGuard` checks `request.headers['x-student-id']` or `process.env.MOCK_STUDENT_ID`. If either is set, it constructs a synthetic student user (`{ userId: null, role: 'STUDENT', studentId, via: 'mock-header' }`) and allows the request.
+     3. **Failure State**: If neither a valid Bearer token nor `x-student-id` / `MOCK_STUDENT_ID` is present, it throws `401 Unauthorized` (`"Missing student identity. Log in, or send x-student-id / set MOCK_STUDENT_ID in development."`).
+   - **Security Warning**: The `StudentAuthGuard` fallback is NOT environment-gated and is currently active in all environments, including production. A request that sends `x-student-id: <studentId>` without an `Authorization` header can be authenticated as that student. Full production token enforcement is tracked in issue #29.
