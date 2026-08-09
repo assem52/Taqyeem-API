@@ -27,6 +27,11 @@ export class StudentAuthGuard extends AuthGuard('jwt') {
       if (!activated) {
         return false;
       }
+      if (request.user?.role === 'ADMIN') {
+        throw new UnauthorizedException(
+          'This area is for learners only. Sign in with a student account.',
+        );
+      }
       if (!request.user?.studentId) {
         throw new UnauthorizedException(
           'This account is not linked to a student profile.',

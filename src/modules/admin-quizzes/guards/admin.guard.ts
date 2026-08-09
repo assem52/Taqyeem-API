@@ -34,7 +34,9 @@ export class AdminGuard implements CanActivate {
         }>(token);
 
         if (payload.role !== 'ADMIN') {
-          throw new ForbiddenException('Admin role required.');
+          throw new ForbiddenException(
+            'This area is for instructors only. Sign in with an admin account.',
+          );
         }
 
         request.user = {

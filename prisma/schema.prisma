@@ -74,6 +74,8 @@ model User {
   status            StudentStatus @default(UNVERIFIED)
   verificationToken String?       @map("verification_token")
   tokenExpiresAt    DateTime?     @map("token_expires_at")
+  passwordResetToken     String?   @map("password_reset_token")
+  passwordResetExpiresAt DateTime? @map("password_reset_expires_at")
   /// Links auth identity to quiz-domain Student (null for pure admins).
   studentId         String?       @unique @db.Uuid @map("student_id")
   student           Student?      @relation(fields: [studentId], references: [id], onDelete: SetNull)
