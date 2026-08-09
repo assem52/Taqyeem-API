@@ -35,6 +35,9 @@
    “Forms start the job. LMS overcomplicates it. QnA finishes it — invite, sit, teach, chase, prove.”
 
 ## Known honest limits
+See also `docs/demo/known-issues.md`.
+
 - Email may be simulated; copy invite link is the reliable path
 - Integrity is for **Needs review**, never accusation
 - Graded exams do not show AI hints during the attempt
+- Seed includes **Closed Quiz — Results Ready** for review + explanations after close
