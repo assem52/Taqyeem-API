@@ -4,6 +4,24 @@ import type Transporter from 'nodemailer/lib/mailer';
 
 export type MailDeliveryMode = 'live' | 'simulated';
 
+/** Accepts 1/0, true/false, yes/no, on/off. Unset → enabled when SMTP_HOST is set. */
+export function isEmailDeliveryEnabled(
+  raw: string | undefined = process.env.EMAIL_DELIVERY_ENABLED,
+  smtpHost: string | undefined = process.env.SMTP_HOST,
+): boolean {
+  const flag = raw?.trim().toLowerCase();
+  if (!flag) {
+    return Boolean(smtpHost?.trim());
+  }
+  if (['0', 'false', 'no', 'off'].includes(flag)) {
+    return false;
+  }
+  if (['1', 'true', 'yes', 'on'].includes(flag)) {
+    return true;
+  }
+  return Boolean(smtpHost?.trim());
+}
+
 @Injectable()
 export class MailTransportService implements OnModuleInit {
   private readonly logger = new Logger(MailTransportService.name);
@@ -12,9 +30,9 @@ export class MailTransportService implements OnModuleInit {
 
   onModuleInit() {
     const host = process.env.SMTP_HOST?.trim();
-    const forceLive = process.env.EMAIL_DELIVERY_ENABLED === 'true';
+    const deliveryEnabled = isEmailDeliveryEnabled();
 
-    if (host) {
+    if (host && deliveryEnabled) {
       const port = Number(process.env.SMTP_PORT || 587);
       this.transporter = nodemailer.createTransport({
         host,
@@ -37,16 +55,22 @@ export class MailTransportService implements OnModuleInit {
       return;
     }
 
-    if (forceLive) {
-      this.logger.warn(
-        'EMAIL_DELIVERY_ENABLED=true but SMTP_HOST is missing — staying in simulated mode.',
-      );
-    } else {
-      this.logger.warn(
-        'Email delivery running in SIMULATED mode. Set SMTP_HOST for live delivery.',
-      );
-    }
     this.mode = 'simulated';
+    if (host && !deliveryEnabled) {
+      this.logger.warn(
+        'Email delivery running in SIMULATED mode (EMAIL_DELIVERY_ENABLED=0). SMTP_* kept but no messages are sent.',
+      );
+      return;
+    }
+    if (deliveryEnabled && !host) {
+      this.logger.warn(
+        'EMAIL_DELIVERY_ENABLED=1 but SMTP_HOST is missing — staying in simulated mode.',
+      );
+      return;
+    }
+    this.logger.warn(
+      'Email delivery running in SIMULATED mode. Set SMTP_HOST and EMAIL_DELIVERY_ENABLED=1 for live delivery.',
+    );
   }
 
   get deliveryMode(): MailDeliveryMode {

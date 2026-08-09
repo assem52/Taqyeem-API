@@ -12,6 +12,12 @@ describe('AdminInvitationStatusService — bulkInviteStudents', () => {
         findMany: jest.fn(),
         create: jest.fn(),
       },
+      student: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      enrollment: {
+        upsert: jest.fn().mockResolvedValue({}),
+      },
     };
 
     const emailService = {
@@ -138,6 +144,66 @@ describe('AdminInvitationStatusService — bulkInviteStudents', () => {
       reason: 'SMTP Connection Timed Out',
       invitationId: 'inv-fail',
       inviteUrl: 'http://localhost:5173/invite/inv-fail',
+    });
+  });
+
+  it('auto-enrolls an existing student account on invite without requiring accept-link', async () => {
+    const { service, prisma, emailService } = createService();
+
+    prisma.quiz.findUnique.mockResolvedValue({
+      id: 'q-100',
+      title: 'Sprint 4 Quiz',
+      status: 'PUBLISHED',
+    });
+    prisma.invitation.findMany.mockResolvedValue([]);
+    prisma.invitation.create.mockResolvedValue({
+      id: 'inv-demo',
+      email: 'assem.test@example.com',
+      quizId: 'q-100',
+    });
+    prisma.student.findUnique.mockResolvedValue({ id: 'student-1' });
+    emailService.sendInvitationEmail.mockResolvedValue({
+      status: EmailLogStatus.FAILED,
+      errorMessage: 'bounce',
+    });
+
+    await service.bulkInviteStudents('q-100', ['assem.test@example.com']);
+
+    expect(prisma.student.findUnique).toHaveBeenCalledWith({
+      where: { email: 'assem.test@example.com' },
+      select: { id: true },
+    });
+    expect(prisma.enrollment.upsert).toHaveBeenCalledWith({
+      where: {
+        quizId_studentId: { quizId: 'q-100', studentId: 'student-1' },
+      },
+      create: { quizId: 'q-100', studentId: 'student-1' },
+      update: {},
+    });
+  });
+
+  it('backfills enrollment when re-inviting a duplicate email for an existing student', async () => {
+    const { service, prisma } = createService();
+
+    prisma.quiz.findUnique.mockResolvedValue({
+      id: 'q-100',
+      title: 'Sprint 4 Quiz',
+      status: 'PUBLISHED',
+    });
+    prisma.invitation.findMany.mockResolvedValue([
+      { id: 'inv-1', email: 'assem.test@example.com', quizId: 'q-100' },
+    ]);
+    prisma.student.findUnique.mockResolvedValue({ id: 'student-1' });
+
+    await service.bulkInviteStudents('q-100', ['assem.test@example.com']);
+
+    expect(prisma.invitation.create).not.toHaveBeenCalled();
+    expect(prisma.enrollment.upsert).toHaveBeenCalledWith({
+      where: {
+        quizId_studentId: { quizId: 'q-100', studentId: 'student-1' },
+      },
+      create: { quizId: 'q-100', studentId: 'student-1' },
+      update: {},
     });
   });
 });
