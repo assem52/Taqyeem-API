@@ -1,10 +1,11 @@
 // src/modules/documents/documents.controller.ts
-import { Controller, Get, Param, Delete, Query } from '@nestjs/common';
+import { Controller, Get, Param, Delete, Query, UseGuards } from '@nestjs/common';
 import { DocumentsService } from './documents.service';
-// استخدم SourceType من الـ DTO بدلاً من generated/prisma
 import { SourceType } from '@prisma/client';
+import { AdminGuard } from '../../admin-quizzes/guards/admin.guard';
 
 @Controller('documents')
+@UseGuards(AdminGuard)
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
 

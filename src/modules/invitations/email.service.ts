@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EmailLogStatus } from '@prisma/client';
+import { MailTransportService } from '../../common/mail/mail-transport.service';
 
 export interface SendInvitationEmailResult {
   status: EmailLogStatus;
@@ -11,39 +12,22 @@ export interface SendInvitationEmailResult {
 @Injectable()
 export class EmailService implements OnModuleInit {
   private readonly logger = new Logger(EmailService.name);
-  private isDeliveryEnabled = false;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mail: MailTransportService,
+  ) {}
 
   onModuleInit() {
-    this.isDeliveryEnabled =
-      Boolean(process.env.SMTP_HOST) ||
-      process.env.EMAIL_DELIVERY_ENABLED === 'true';
-
-    if (!this.isDeliveryEnabled) {
-      this.logger.warn(
-        '⚠️ Email delivery running in SIMULATED mode. Set SMTP_HOST or EMAIL_DELIVERY_ENABLED=true for live network delivery.',
-      );
-    } else {
-      this.logger.log('📧 Live email delivery transport enabled.');
-    }
+    this.logger.log(`Invitation email mode: ${this.mail.deliveryMode}`);
   }
 
   get deliveryMode(): 'live' | 'simulated' {
-    return this.isDeliveryEnabled ? 'live' : 'simulated';
+    return this.mail.deliveryMode;
   }
 
-  /**
-   * Dispatch an invitation email to a target address.
-   * Deterministically records an EmailLog entry with status SENT or FAILED.
-   */
   buildInviteUrl(invitationId: string): string {
-    const base = (
-      process.env.FRONTEND_URL ||
-      process.env.APP_URL ||
-      'http://localhost:5173'
-    ).replace(/\/$/, '');
-    return `${base}/invite/${invitationId}`;
+    return `${this.mail.frontendBaseUrl()}/invite/${invitationId}`;
   }
 
   async sendInvitationEmail(
@@ -55,7 +39,6 @@ export class EmailService implements OnModuleInit {
       const normEmail = email.trim().toLowerCase();
       const inviteUrl = this.buildInviteUrl(invitationId);
 
-      // Precision test fixture failure triggers (anchored to local part or test domain)
       if (
         normEmail.startsWith('fail-smtp@') ||
         normEmail.startsWith('fail@') ||
@@ -64,35 +47,59 @@ export class EmailService implements OnModuleInit {
         throw new Error(`SMTP dispatch failed for recipient ${email}`);
       }
 
-      if (this.isDeliveryEnabled) {
-        // Transport dispatch logic when SMTP_HOST or EMAIL_DELIVERY_ENABLED is active
-        this.logger.log(
-          `[LIVE DISPATCH] Invitation email dispatched to ${email} for quiz "${quizTitle}" link=${inviteUrl}`,
-        );
-      } else {
-        // Transparent simulation mode logging — always include the invite URL for operators.
-        this.logger.log(
-          `[SIMULATED DISPATCH] Mock invitation for ${email} on quiz "${quizTitle}" — open: ${inviteUrl}`,
-        );
-      }
+      const subject = `You're invited: ${quizTitle}`;
+      const text = [
+        `You've been invited to take "${quizTitle}" on Taqyem.`,
+        '',
+        `Open your invite: ${inviteUrl}`,
+        '',
+        'If the button in your email client does not work, paste the link into your browser.',
+      ].join('\n');
 
-      // Record SENT status in EmailLog
-      await this.prisma.emailLog.create({
-        data: {
-          invitationId,
-          status: EmailLogStatus.SENT,
-        },
+      const sendResult = await this.mail.sendMail({
+        to: normEmail,
+        subject,
+        text,
       });
 
-      return {
-        status: EmailLogStatus.SENT,
-        isSimulated: !this.isDeliveryEnabled,
-      };
+      // Only claim SENT when SMTP accepted the message.
+      // Simulated mode records FAILED so operators use Copy link (never pretend live mail).
+      if (sendResult.simulated) {
+        await this.prisma.emailLog.create({
+          data: {
+            invitationId,
+            status: EmailLogStatus.FAILED,
+            errorMessage:
+              'Simulated delivery — email not sent. Use Copy link / invite URL.',
+          },
+        });
+        return {
+          status: EmailLogStatus.FAILED,
+          errorMessage:
+            'Simulated delivery — email not sent. Use Copy link / invite URL.',
+          isSimulated: true,
+        };
+      }
+
+      if (sendResult.delivered) {
+        await this.prisma.emailLog.create({
+          data: {
+            invitationId,
+            status: EmailLogStatus.SENT,
+            errorMessage: null,
+          },
+        });
+        return {
+          status: EmailLogStatus.SENT,
+          isSimulated: false,
+        };
+      }
+
+      throw new Error('Email transport did not accept the message');
     } catch (err: any) {
       const errorMessage = err.message || 'Email delivery failed';
       this.logger.warn(`Failed to dispatch email to ${email}: ${errorMessage}`);
 
-      // Record FAILED status in EmailLog
       await this.prisma.emailLog.create({
         data: {
           invitationId,
@@ -104,7 +111,7 @@ export class EmailService implements OnModuleInit {
       return {
         status: EmailLogStatus.FAILED,
         errorMessage,
-        isSimulated: !this.isDeliveryEnabled,
+        isSimulated: this.mail.deliveryMode === 'simulated',
       };
     }
   }

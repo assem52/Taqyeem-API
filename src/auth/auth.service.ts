@@ -16,6 +16,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { MailTransportService } from '../common/mail/mail-transport.service';
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
@@ -29,6 +30,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly mail: MailTransportService,
   ) {}
 
   /**
@@ -80,11 +82,7 @@ export class AuthService {
       return created;
     });
 
-    if (process.env.NODE_ENV !== 'production') {
-      this.logger.debug(
-        `[DEV] Verification for ${user.email}: POST /auth/verify { email, token: "${verificationToken}" }`,
-      );
-    }
+    await this.sendVerificationEmail(user.email, verificationToken);
 
     return {
       message: 'Registration successful. Please verify your email.',
@@ -245,11 +243,7 @@ export class AuthService {
       },
     });
 
-    if (process.env.NODE_ENV !== 'production') {
-      this.logger.debug(
-        `[DEV] New verification for ${email}: POST /auth/verify { email, token: "${verificationToken}" }`,
-      );
-    }
+    await this.sendVerificationEmail(email, verificationToken);
 
     return {
       message:
@@ -273,14 +267,34 @@ export class AuthService {
         },
       });
 
-      if (process.env.NODE_ENV !== 'production') {
-        this.logger.debug(
-          `[DEV] Password reset for ${email}: POST /auth/reset-password { email, token: "${passwordResetToken}", password }`,
-        );
-      }
+      const resetUrl = `${this.mail.frontendBaseUrl()}/reset-password?email=${encodeURIComponent(email)}&token=${encodeURIComponent(passwordResetToken)}`;
+      await this.mail.sendMail({
+        to: email,
+        subject: 'Reset your Taqyem password',
+        text: [
+          'Reset your password using this link:',
+          resetUrl,
+          '',
+          'This link expires in 1 hour. If you did not request a reset, ignore this email.',
+        ].join('\n'),
+      });
     }
 
     return { message: FORGOT_PASSWORD_MESSAGE };
+  }
+
+  private async sendVerificationEmail(email: string, token: string) {
+    const verifyUrl = `${this.mail.frontendBaseUrl()}/verify?email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`;
+    await this.mail.sendMail({
+      to: email,
+      subject: 'Verify your Taqyem email',
+      text: [
+        'Welcome to Taqyem. Verify your email to access quizzes:',
+        verifyUrl,
+        '',
+        `Or enter this token on the verify page: ${token}`,
+      ].join('\n'),
+    });
   }
 
   async resetPassword(dto: ResetPasswordDto) {

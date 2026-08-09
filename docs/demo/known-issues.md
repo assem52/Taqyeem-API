@@ -1,15 +1,13 @@
-# Known issues (honest demo log)
+# Known issues (honest demo / deploy log)
 
 Updated: 2026-08-09
 
 | Issue | Impact | Workaround |
 |-------|--------|------------|
-| Email often runs in **simulated** mode | Learners may not receive mail | **Copy invite link** or **Resend** from Access; check server logs for simulated URLs |
-| ARCHIVED quiz status not implemented | No archive transition API | Keep quizzes as Draft / Published (Archived filter hidden) |
-| Open-ended grading is not auto-scored | Counts as ungraded in score object | Prefer MCQ/TF for demos; explanations still teach on review |
-| Knowledge/RAG suggest-questions not wired into quiz authoring UI yet | Differentiator deferred | Use manual question authoring |
-| Practice / multi-attempt mode not shipped | Graded quizzes stay single-attempt | Use `resultsPolicy: IMMEDIATE` for softer review after submit |
+| Email **simulated** when `SMTP_HOST` unset | Invites/verify/reset are logged, not delivered; invite email status is FAILED | **Copy invite link** from Access; set SMTP for live cohorts |
+| ARCHIVED quiz status not implemented | No archive transition API | Keep Draft / Published |
+| Open-ended grading is not auto-scored | Counts as ungraded | Prefer MCQ/TF for demos |
+| Knowledge/RAG not in quiz authoring UI | Differentiator deferred | RAG HTTP is admin-JWT only |
+| Practice / multi-attempt mode not shipped | Single-attempt graded quizzes | Use `resultsPolicy: IMMEDIATE` |
 
-Password reset is available (`/forgot-password` → `/reset-password`). In development, reset tokens are logged by the API.
-
-Integrity wording is **Needs review** only — never accuse cheating in product copy.
+See `docs/deploy/DEPLOY.md` and `docs/demo/smoke-checklist.md` in the monorepo (or copies under this repo).

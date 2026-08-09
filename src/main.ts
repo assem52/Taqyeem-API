@@ -1,9 +1,15 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { assertNoMockAuthInProduction } from './assert-safe-env';
+import helmet from 'helmet';
+import {
+  assertNoMockAuthInProduction,
+  resolveCorsOrigins,
+} from './assert-safe-env';
+
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
 
   const configService = app.get(ConfigService);
@@ -12,15 +18,22 @@ async function bootstrap() {
     configService.get('MOCK_STUDENT_ID'),
   );
 
+  app.use(helmet());
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       transform: true,
     }),
   );
-  app.enableCors();
+
+  const origins = resolveCorsOrigins();
+  app.enableCors({
+    origin: origins,
+    credentials: true,
+  });
+
   const port = configService.get('PORT', 3000);
   await app.listen(port);
-  console.log(`🚀 Application is running on: http://localhost:${port}`);
+  logger.log(`Taqyem API listening on port ${port}`);
 }
 bootstrap();

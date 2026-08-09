@@ -5,13 +5,12 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Observable } from 'rxjs';
+import { isProductionEnv } from '../../assert-safe-env';
 
 /**
  * Dual-mode student identity:
  * 1) Prefer Authorization: Bearer <jwt> (must resolve to a linked studentId)
- * 2) Fall back to x-student-id / MOCK_STUDENT_ID for local/dev compatibility
- *
- * After this guard, controllers can read `request.user.studentId`.
+ * 2) Fall back to x-student-id / MOCK_STUDENT_ID **only outside production**
  */
 @Injectable()
 export class StudentAuthGuard extends AuthGuard('jwt') {
@@ -40,6 +39,12 @@ export class StudentAuthGuard extends AuthGuard('jwt') {
       return true;
     }
 
+    if (isProductionEnv(process.env.NODE_ENV)) {
+      throw new UnauthorizedException(
+        'Missing or invalid credentials. Sign in as a learner.',
+      );
+    }
+
     const resolvedStudentId =
       request.headers?.['x-student-id'] ?? process.env.MOCK_STUDENT_ID;
 
@@ -49,7 +54,6 @@ export class StudentAuthGuard extends AuthGuard('jwt') {
       );
     }
 
-    // Synthetic user so controllers have one shape either way.
     request.user = {
       userId: null,
       role: 'STUDENT',

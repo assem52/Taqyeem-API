@@ -14,6 +14,11 @@ export class AttemptDeadlineScheduler {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async handleExpiredAttempts() {
+    // Multi-instance: set CRON_ENABLED=false on replicas; keep true on one leader.
+    if (process.env.CRON_ENABLED === 'false') {
+      return;
+    }
+
     // Window closed OR attempt duration elapsed.
     const expired = await this.prisma.$queryRaw<Array<{ id: string }>>`
       SELECT DISTINCT q.id

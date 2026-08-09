@@ -54,6 +54,13 @@ export class AdminGuard implements CanActivate {
       }
     }
 
+    // Shared-secret header is a local/dev fallback only.
+    if (process.env.NODE_ENV === 'production') {
+      throw new UnauthorizedException(
+        'Sign in with an admin account. Shared admin tokens are disabled in production.',
+      );
+    }
+
     const providedToken = request.headers['x-admin-token'];
     const expectedToken = process.env.ADMIN_API_TOKEN;
 
