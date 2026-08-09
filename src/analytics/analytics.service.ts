@@ -16,10 +16,16 @@ export class AnalyticsService {
       where: { quizId },
     });
 
-    const invitedCount = await this.prisma.enrollment.count({
-      where: { quizId },
-    });
+    const [invitationCount, enrolledCount] = await Promise.all([
+      this.prisma.invitation.groupBy({
+        by: ['email'],
+        where: { quizId },
+      }).then((rows) => rows.length),
+      this.prisma.enrollment.count({ where: { quizId } }),
+    ]);
 
+    // Funnel dictionary: Invited = distinct invitation emails; Enrolled = Enrollment rows.
+    const invitedCount = invitationCount;
     const startedCount = attempts.length;
 
     const TERMINAL = new Set(['SUBMITTED', 'AUTO_SUBMITTED']);
@@ -37,6 +43,7 @@ export class AnalyticsService {
 
     return {
       invitedCount,
+      enrolledCount,
       startedCount,
       submittedCount,
       passedCount,

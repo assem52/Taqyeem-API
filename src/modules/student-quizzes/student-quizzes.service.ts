@@ -340,8 +340,7 @@ export class StudentQuizzesService {
             selectedOptionText: selected?.option ?? null,
             textAnswer: answer?.textAnswer ?? null,
             isCorrect,
-            correctOptionText:
-              policy === ResultsPolicy.ADMIN_ONLY ? null : (correct?.option ?? null),
+            correctOptionText: correct?.option ?? null,
             explanation: null as string | null,
           };
         })

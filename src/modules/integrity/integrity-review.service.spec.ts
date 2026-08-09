@@ -28,7 +28,7 @@ describe('IntegrityReviewService.listAttemptsForQuiz', () => {
         id: 'a1',
         studentId: 'stu-1',
         score: 80,
-        student: { name: 'Ada' },
+        student: { name: 'Ada', email: 'ada@example.com' },
         _count: { integrityEvents: 6 },
       },
     ]);

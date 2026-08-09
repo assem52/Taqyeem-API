@@ -36,6 +36,14 @@ describe('AnalyticsService', () => {
           return Promise.resolve(0);
         }),
       },
+      invitation: {
+        groupBy: jest.fn().mockImplementation(({ where }: any) => {
+          if (where.quizId === 'quiz-1') {
+            return Promise.resolve([{ email: 'a@x.com' }, { email: 'b@x.com' }]);
+          }
+          return Promise.resolve([]);
+        }),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
