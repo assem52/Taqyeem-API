@@ -8,6 +8,7 @@ export class AdminQuizOptionDto {
 export class AdminQuizQuestionDto {
   questionId: string;
   text: string;
+  explanation: string | null;
   type: string;
   points: number;
   isHidden: boolean;

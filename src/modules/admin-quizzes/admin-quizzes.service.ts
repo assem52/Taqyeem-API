@@ -331,6 +331,7 @@ export class AdminQuizzesService {
       data: {
         quizId,
         text: dto.text.trim(),
+        explanation: dto.explanation?.trim() || null,
         type: dto.type,
         points: dto.points ?? 1,
         position: (lastQuestion?.position ?? -1) + 1,
@@ -378,6 +379,10 @@ export class AdminQuizzesService {
         where: { id: questionId },
         data: {
           text: dto.text?.trim(),
+          explanation:
+            dto.explanation !== undefined
+              ? dto.explanation?.trim() || null
+              : undefined,
           type: dto.type,
           points: dto.points,
           options:
@@ -613,6 +618,7 @@ export class AdminQuizzesService {
     return {
       questionId: question.id,
       text: question.text,
+      explanation: question.explanation,
       type: question.type,
       points: Number(question.points),
       isHidden: question.isHidden,

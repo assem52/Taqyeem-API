@@ -28,6 +28,10 @@ export class CreateQuestionDto {
   @IsString()
   text!: string;
 
+  @IsOptional()
+  @IsString()
+  explanation?: string;
+
   @IsEnum(QuestionType)
   type!: QuestionType;
 
