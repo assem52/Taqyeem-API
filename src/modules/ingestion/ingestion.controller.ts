@@ -5,11 +5,14 @@ import {
   Body,
   BadRequestException,
   ParseArrayPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { IngestionService } from './ingestion.service';
 import { CreateDocumentDto } from '../documents/dto/create-document.dto';
+import { AdminGuard } from '../admin-quizzes/guards/admin.guard';
 
 @Controller('ingestion')
+@UseGuards(AdminGuard)
 export class IngestionController {
   constructor(private ingestionService: IngestionService) {}
 

@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -13,8 +14,21 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { MailTransportService } from '../common/mail/mail-transport.service';
+import { LearnerMailService } from '../common/mail/learner-mail.service';
+import { resolveDevVerificationCode } from '../assert-safe-env';
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+/** Per-registration OTP emailed to the user (always unique). */
+function createVerificationCode(): string {
+  return String(crypto.randomInt(100_000, 1_000_000));
+}
+
+const FORGOT_PASSWORD_MESSAGE =
+  'If an account exists for that email, password reset instructions have been sent.';
 
 @Injectable()
 export class AuthService {
@@ -23,6 +37,8 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly mail: MailTransportService,
+    private readonly learnerMail: LearnerMailService,
   ) {}
 
   /**
@@ -41,8 +57,9 @@ export class AuthService {
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
-    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationToken = createVerificationCode();
     const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const devEscapeCode = resolveDevVerificationCode();
 
     const user = await this.prisma.$transaction(async (tx) => {
       let student = await tx.student.findUnique({ where: { email } });
@@ -57,7 +74,7 @@ export class AuthService {
         });
       }
 
-      return tx.user.create({
+      const created = await tx.user.create({
         data: {
           name: dto.name,
           email,
@@ -69,16 +86,33 @@ export class AuthService {
           studentId: student.id,
         },
       });
+
+      await this.enrollFromPendingInvites(tx, student.id, email);
+      return created;
     });
 
-    if (process.env.NODE_ENV !== 'production') {
-      this.logger.debug(
-        `[DEV] Verification for ${user.email}: POST /auth/verify { email, token: "${verificationToken}" }`,
+    const mailResult = await this.learnerMail.sendRegistrationVerification(
+      user.email,
+      verificationToken,
+      { devEscapeCode: devEscapeCode ?? undefined },
+    );
+
+    if (!mailResult.delivered && !mailResult.simulated) {
+      this.logger.warn(
+        `Verification email was not delivered to ${user.email}` +
+          (devEscapeCode
+            ? `; use escape code ${devEscapeCode} in non-production.`
+            : '.'),
       );
     }
 
+    const emailedOk = mailResult.delivered || mailResult.simulated;
     return {
-      message: 'Registration successful. Please verify your email.',
+      message: emailedOk
+        ? 'Registration successful. Please verify your email.'
+        : devEscapeCode
+          ? `Registration successful, but the verification email could not be sent. Use escape code ${devEscapeCode} or resend.`
+          : 'Registration successful, but the verification email could not be sent. Use Resend verification or contact support.',
       email: user.email,
     };
   }
@@ -144,19 +178,34 @@ export class AuthService {
 
   async verifyEmail(dto: VerifyEmailDto) {
     const email = normalizeEmail(dto.email);
-    const user = await this.prisma.user.findFirst({
-      where: {
-        email,
-        verificationToken: dto.token,
-      },
-    });
+    const token = dto.token.trim();
+    const devCode = resolveDevVerificationCode();
 
-    if (!user) {
-      throw new BadRequestException('Invalid verification token or email.');
+    let user =
+      (await this.prisma.user.findFirst({
+        where: {
+          email,
+          verificationToken: token,
+        },
+      })) ?? null;
+
+    // Local/demo shortcut: accept the fixed development code for any unverified account.
+    if (!user && devCode && token === devCode) {
+      user = await this.prisma.user.findFirst({
+        where: { email, status: 'UNVERIFIED' },
+      });
     }
 
-    if (user.tokenExpiresAt && new Date() > user.tokenExpiresAt) {
-      throw new BadRequestException('Verification token has expired.');
+    if (!user) {
+      throw new BadRequestException('Invalid verification code or email.');
+    }
+
+    if (
+      !(devCode && token === devCode) &&
+      user.tokenExpiresAt &&
+      new Date() > user.tokenExpiresAt
+    ) {
+      throw new BadRequestException('Verification code has expired.');
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -175,10 +224,41 @@ export class AuthService {
           where: { id: user.studentId },
           data: { status: 'VERIFIED' },
         });
+        await this.enrollFromPendingInvites(tx, user.studentId, email);
       }
     });
 
     return { message: 'Email verified successfully.' };
+  }
+
+  /** Access contract: matching invite email → Enrollment on register/verify. */
+  private async enrollFromPendingInvites(
+    tx: Prisma.TransactionClient,
+    studentId: string,
+    email: string,
+  ): Promise<void> {
+    const invitations = await tx.invitation.findMany({
+      where: {
+        email: normalizeEmail(email),
+        quiz: { status: 'PUBLISHED' },
+      },
+      select: { quizId: true },
+    });
+
+    const quizIds = [...new Set(invitations.map((row) => row.quizId))];
+    for (const quizId of quizIds) {
+      try {
+        await tx.enrollment.create({ data: { quizId, studentId } });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 
   async resendVerification(dto: ResendVerificationDto) {
@@ -194,8 +274,9 @@ export class AuthService {
       };
     }
 
-    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationToken = createVerificationCode();
     const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const devEscapeCode = resolveDevVerificationCode();
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -205,15 +286,83 @@ export class AuthService {
       },
     });
 
-    if (process.env.NODE_ENV !== 'production') {
-      this.logger.debug(
-        `[DEV] New verification for ${email}: POST /auth/verify { email, token: "${verificationToken}" }`,
-      );
-    }
+    await this.learnerMail.sendRegistrationVerification(email, verificationToken, {
+      devEscapeCode: devEscapeCode ?? undefined,
+    });
 
     return {
       message:
         'If that account exists and needs verification, a new link has been sent.',
     };
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const email = normalizeEmail(dto.email);
+    const user = await this.prisma.user.findUnique({ where: { email } });
+
+    if (user) {
+      const passwordResetToken = crypto.randomBytes(32).toString('hex');
+      const passwordResetExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordResetToken,
+          passwordResetExpiresAt,
+        },
+      });
+
+      const resetUrl = `${this.mail.frontendBaseUrl()}/reset-password?email=${encodeURIComponent(email)}&token=${encodeURIComponent(passwordResetToken)}`;
+      try {
+        await this.mail.sendMail({
+          to: email,
+          subject: 'Reset your Taqyem password',
+          text: [
+            'Reset your password using this link:',
+            resetUrl,
+            '',
+            'This link expires in 1 hour. If you did not request a reset, ignore this email.',
+          ].join('\n'),
+        });
+      } catch (error: any) {
+        this.logger.warn(
+          `Failed to send password-reset email to ${email}: ${error?.message || error}`,
+        );
+      }
+    }
+
+    return { message: FORGOT_PASSWORD_MESSAGE };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const email = normalizeEmail(dto.email);
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email,
+        passwordResetToken: dto.token,
+      },
+    });
+
+    if (
+      !user ||
+      !user.passwordResetExpiresAt ||
+      new Date() > user.passwordResetExpiresAt
+    ) {
+      throw new BadRequestException(
+        'Invalid or expired password reset token.',
+      );
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.password, 10);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        passwordResetToken: null,
+        passwordResetExpiresAt: null,
+      },
+    });
+
+    return { message: 'Password updated. You can sign in with your new password.' };
   }
 }

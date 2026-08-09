@@ -12,6 +12,9 @@ export class StudentQuizDashboardDtoItem {
   closesAt!: string;
   studentState!: StudentQuizState;
   score?: number | null;
+  passScore?: number | null;
+  passed?: boolean | null;
+  resultsPolicy?: string;
   canStart!: boolean;
   blockedReason?: string;
 }

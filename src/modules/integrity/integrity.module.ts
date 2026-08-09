@@ -9,5 +9,6 @@ import { AuthModule } from '../../auth/auth.module';
   imports: [AuthModule],
   controllers: [IntegrityCaptureController, IntegrityReviewController],
   providers: [IntegrityCaptureService, IntegrityReviewService],
+  exports: [IntegrityReviewService],
 })
 export class IntegrityModule {}

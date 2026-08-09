@@ -34,7 +34,9 @@ export class AdminGuard implements CanActivate {
         }>(token);
 
         if (payload.role !== 'ADMIN') {
-          throw new ForbiddenException('Admin role required.');
+          throw new ForbiddenException(
+            'This area is for instructors only. Sign in with an admin account.',
+          );
         }
 
         request.user = {
@@ -50,6 +52,13 @@ export class AdminGuard implements CanActivate {
         }
         throw new UnauthorizedException('Invalid or expired token.');
       }
+    }
+
+    // Shared-secret header is a local/dev fallback only.
+    if (process.env.NODE_ENV === 'production') {
+      throw new UnauthorizedException(
+        'Sign in with an admin account. Shared admin tokens are disabled in production.',
+      );
     }
 
     const providedToken = request.headers['x-admin-token'];

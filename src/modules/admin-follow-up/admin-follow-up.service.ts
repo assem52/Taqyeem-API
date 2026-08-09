@@ -52,6 +52,7 @@ export class AdminFollowUpService {
         })),
       },
       select: {
+        id: true,
         studentId: true,
         quizId: true,
         status: true,
@@ -103,6 +104,7 @@ export class AdminFollowUpService {
         studentEmail: student.email,
         quizId: quiz.id,
         quizTitle: quiz.title,
+        attemptId: attempt?.id ?? null,
         score,
         submittedAt: attempt?.submittedAt?.toISOString() ?? null,
         attemptStatus: attempt?.status ?? null,

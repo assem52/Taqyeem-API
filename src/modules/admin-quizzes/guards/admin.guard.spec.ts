@@ -16,16 +16,19 @@ function buildContext(headers: Record<string, string>): ExecutionContext {
 
 describe('AdminGuard', () => {
   const originalEnv = process.env.ADMIN_API_TOKEN;
+  const originalNodeEnv = process.env.NODE_ENV;
   let jwtService: { verify: jest.Mock };
   let guard: AdminGuard;
 
   beforeEach(() => {
+    process.env.NODE_ENV = 'development';
     jwtService = { verify: jest.fn() };
     guard = new AdminGuard(jwtService as unknown as JwtService);
   });
 
   afterEach(() => {
     process.env.ADMIN_API_TOKEN = originalEnv;
+    process.env.NODE_ENV = originalNodeEnv;
   });
 
   it('SECURITY: fails closed when ADMIN_API_TOKEN is not configured and no Bearer token', () => {
@@ -80,5 +83,15 @@ describe('AdminGuard', () => {
         buildContext({ authorization: 'Bearer student.jwt.token' }),
       ),
     ).toThrow(ForbiddenException);
+  });
+
+  it('rejects shared admin token in production', () => {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    process.env.ADMIN_API_TOKEN = 'real-secret';
+    expect(() =>
+      guard.canActivate(buildContext({ 'x-admin-token': 'real-secret' })),
+    ).toThrow(UnauthorizedException);
+    process.env.NODE_ENV = previous;
   });
 });

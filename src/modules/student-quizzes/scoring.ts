@@ -18,6 +18,7 @@ export interface QuestionSnapshotItem {
 
 export interface StoredAnswer {
   selectedOptionId: string | null;
+  textAnswer?: string | null;
   answeredAt: string;
 }
 export type AttemptAnswers = Record<string, StoredAnswer | undefined>;

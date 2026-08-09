@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EmailService } from './email.service';
 import { countByStatus, deriveInvitationStatuses } from './invitation-status';
@@ -17,6 +17,7 @@ import {
   BulkInviteItemResult,
   BulkInviteResponseDto,
 } from './dto/bulk-invite.dto';
+import { QuizStatus } from '@prisma/client';
 
 const normalizeEmail = (email: string): string => email.trim().toLowerCase();
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -111,15 +112,29 @@ export class AdminInvitationStatusService {
       INVITATION_STATUS_ORDER.map((status, index) => [status, index]),
     );
 
+    const invitationIdByEmail = new Map(
+      invitations.map((invitation) => [
+        normalizeEmail(invitation.email),
+        invitation.id,
+      ]),
+    );
+
     const rowDtos: InvitationStatusRowDto[] = rows
-      .map((row) => ({
-        email: row.email,
-        studentName: studentNameByEmail.get(row.email) ?? null,
-        status: row.status,
-        ...(row.status === InvitationStatus.FAILED
-          ? { emailLogId: failedLogIdByPerson.get(row.email) }
-          : {}),
-      }))
+      .map((row) => {
+        const invitationId = invitationIdByEmail.get(row.email);
+        return {
+          email: row.email,
+          studentName: studentNameByEmail.get(row.email) ?? null,
+          status: row.status,
+          invitationId: invitationId ?? null,
+          inviteUrl: invitationId
+            ? this.emailService.buildInviteUrl(invitationId)
+            : null,
+          ...(row.status === InvitationStatus.FAILED
+            ? { emailLogId: failedLogIdByPerson.get(row.email) }
+            : {}),
+        };
+      })
       .sort(
         (left, right) =>
           statusRank.get(left.status)! - statusRank.get(right.status)! ||
@@ -153,6 +168,12 @@ export class AdminInvitationStatusService {
 
     if (!quiz) {
       throw new NotFoundException('Quiz not found');
+    }
+
+    if (quiz.status !== QuizStatus.PUBLISHED) {
+      throw new BadRequestException(
+        'Publish the quiz before inviting students.',
+      );
     }
 
     const existingInvitations = await this.prisma.invitation.findMany({
@@ -219,6 +240,8 @@ export class AdminInvitationStatusService {
           results.push({
             email: normEmail,
             status: 'SENT',
+            invitationId: invitation.id,
+            inviteUrl: this.emailService.buildInviteUrl(invitation.id),
           });
         } else {
           failedCount++;
@@ -226,6 +249,8 @@ export class AdminInvitationStatusService {
             email: normEmail,
             status: 'FAILED',
             reason: sendRes.errorMessage || 'Email dispatch failed',
+            invitationId: invitation.id,
+            inviteUrl: this.emailService.buildInviteUrl(invitation.id),
           });
         }
       } catch (err: any) {
@@ -247,6 +272,60 @@ export class AdminInvitationStatusService {
       invalid: invalidCount,
       deliveryMode: this.emailService.deliveryMode,
       results,
+    };
+  }
+
+  /**
+   * Re-dispatch invitation email for an existing invite (failed or operator resend).
+   */
+  async resendInvitation(
+    quizId: string,
+    invitationId: string,
+  ): Promise<{
+    email: string;
+    status: 'SENT' | 'FAILED';
+    inviteUrl: string;
+    reason?: string;
+    deliveryMode: 'live' | 'simulated';
+  }> {
+    const invitation = await this.prisma.invitation.findFirst({
+      where: { id: invitationId, quizId },
+      include: { quiz: { select: { title: true, status: true } } },
+    });
+
+    if (!invitation) {
+      throw new NotFoundException('Invitation not found for this quiz.');
+    }
+
+    if (invitation.quiz.status !== QuizStatus.PUBLISHED) {
+      throw new BadRequestException(
+        'Publish the quiz before resending invitations.',
+      );
+    }
+
+    const sendRes = await this.emailService.sendInvitationEmail(
+      invitation.id,
+      invitation.email,
+      invitation.quiz.title,
+    );
+
+    const inviteUrl = this.emailService.buildInviteUrl(invitation.id);
+
+    if (sendRes.status === 'SENT') {
+      return {
+        email: invitation.email,
+        status: 'SENT',
+        inviteUrl,
+        deliveryMode: this.emailService.deliveryMode,
+      };
+    }
+
+    return {
+      email: invitation.email,
+      status: 'FAILED',
+      inviteUrl,
+      reason: sendRes.errorMessage || 'Email dispatch failed',
+      deliveryMode: this.emailService.deliveryMode,
     };
   }
 }

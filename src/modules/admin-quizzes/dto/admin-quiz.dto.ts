@@ -8,6 +8,7 @@ export class AdminQuizOptionDto {
 export class AdminQuizQuestionDto {
   questionId: string;
   text: string;
+  explanation: string | null;
   type: string;
   points: number;
   isHidden: boolean;
@@ -20,11 +21,14 @@ export class AdminQuizDto {
   quizId: string;
   title: string;
   description: string | null;
+  instructions: string | null;
   status: string;
   openDate: string;
   closesAt: string;
   duration: number;
   passScore: number | null;
+  integrityThreshold: number;
+  resultsPolicy: string;
   hasAttempts: boolean;
   attemptCount: number;
   canEditStructure: boolean;

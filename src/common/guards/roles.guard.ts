@@ -23,7 +23,9 @@ export class RolesGuard implements CanActivate {
     const user = request.user;
 
     if (!user || !requiredRoles.includes(user.role)) {
-      throw new ForbiddenException('Access denied: Insufficient permissions');
+      throw new ForbiddenException(
+        'This account cannot access this area. Sign in with the correct role.',
+      );
     }
     return true;
   }

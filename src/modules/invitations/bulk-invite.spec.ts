@@ -16,6 +16,9 @@ describe('AdminInvitationStatusService — bulkInviteStudents', () => {
 
     const emailService = {
       sendInvitationEmail: jest.fn(),
+      buildInviteUrl: jest.fn(
+        (id: string) => `http://localhost:5173/invite/${id}`,
+      ),
       deliveryMode: 'simulated' as const,
     };
 
@@ -44,6 +47,7 @@ describe('AdminInvitationStatusService — bulkInviteStudents', () => {
     prisma.quiz.findUnique.mockResolvedValue({
       id: 'q-100',
       title: 'Sprint 4 Quiz',
+      status: 'PUBLISHED',
     });
 
     prisma.invitation.findMany.mockResolvedValue([
@@ -77,7 +81,12 @@ describe('AdminInvitationStatusService — bulkInviteStudents', () => {
     expect(result.deliveryMode).toBe('simulated');
 
     expect(result.results).toEqual([
-      { email: 'newuser@example.com', status: 'SENT' },
+      {
+        email: 'newuser@example.com',
+        status: 'SENT',
+        invitationId: 'inv-new',
+        inviteUrl: 'http://localhost:5173/invite/inv-new',
+      },
       {
         email: 'existing@example.com',
         status: 'DUPLICATE',
@@ -102,6 +111,7 @@ describe('AdminInvitationStatusService — bulkInviteStudents', () => {
     prisma.quiz.findUnique.mockResolvedValue({
       id: 'q-100',
       title: 'Sprint 4 Quiz',
+      status: 'PUBLISHED',
     });
 
     prisma.invitation.findMany.mockResolvedValue([]);
@@ -126,6 +136,8 @@ describe('AdminInvitationStatusService — bulkInviteStudents', () => {
       email: 'fail@example.com',
       status: 'FAILED',
       reason: 'SMTP Connection Timed Out',
+      invitationId: 'inv-fail',
+      inviteUrl: 'http://localhost:5173/invite/inv-fail',
     });
   });
 });

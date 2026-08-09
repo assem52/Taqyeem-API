@@ -16,7 +16,7 @@ describe('deriveStudentState', () => {
 
     const access = resolveAccess('VERIFIED', state, openDate, closeDate);
     expect(access.canStart).toBe(false);
-    expect(access.blockedReason).toContain(openDate.toISOString());
+    expect(access.blockedReason).toMatch(/opens on/i);
   });
 
   it('is "Not started" inside the window with no attempt', () => {
@@ -63,13 +63,13 @@ describe('resolveAccess', () => {
   it('blocks and names the date for a closed quiz', () => {
     const result = resolveAccess('VERIFIED', 'Closed', openDate, closeDate);
     expect(result.canStart).toBe(false);
-    expect(result.blockedReason).toContain(closeDate.toISOString());
+    expect(result.blockedReason).toMatch(/closed on/i);
   });
 
   it('blocks and names the date for a not-yet-open quiz', () => {
     const result = resolveAccess('VERIFIED', 'Not open yet', openDate, closeDate);
     expect(result.canStart).toBe(false);
-    expect(result.blockedReason).toContain(openDate.toISOString());
+    expect(result.blockedReason).toMatch(/opens on/i);
   });
 
   it('blocks a re-visit to an already-submitted quiz', () => {

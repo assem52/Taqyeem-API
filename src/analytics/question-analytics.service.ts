@@ -32,9 +32,13 @@ export class QuestionAnalyticsService {
         if (answersSnapshot && answersSnapshot[questionId]) {
           totalAnswers++;
           const studentAnswer = answersSnapshot[questionId];
+          const selectedOptionId =
+            studentAnswer && typeof studentAnswer === 'object'
+              ? studentAnswer.selectedOptionId
+              : studentAnswer;
 
           const correctOption = options.find((opt) => opt.isCorrect);
-          if (correctOption && studentAnswer === correctOption.id) {
+          if (correctOption && selectedOptionId === correctOption.id) {
             correctAnswersCount++;
           }
         }

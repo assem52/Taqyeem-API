@@ -1,8 +1,10 @@
-// src/app.module.ts
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { QuestionsModule } from './modules/questions/questions.module';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { MailModule } from './common/mail/mail.module';
 import { AuthModule } from './auth/auth.module';
 import { DocumentsModule } from './modules/documents/dto/documents.module';
 import { EmbeddingsModule } from './modules/embeddings/embeddings.module';
@@ -15,13 +17,24 @@ import { IntegrityModule } from './modules/integrity/integrity.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { HealthController } from './health.controller';
+import { RequestLoggingMiddleware } from './common/logging/request-logging.middleware';
+import { MiddlewareConsumer, NestModule } from '@nestjs/common';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
     }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60_000,
+        limit: 120,
+      },
+    ]),
     PrismaModule,
+    MailModule,
     ScheduleModule.forRoot(),
     AuthModule,
     DocumentsModule,
@@ -36,7 +49,16 @@ import { ScheduleModule } from '@nestjs/schedule';
     AnalyticsModule,
     QuestionsModule,
   ],
-  controllers:[],
-  providers:[],
+  controllers: [HealthController],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestLoggingMiddleware).forRoutes('*');
+  }
+}

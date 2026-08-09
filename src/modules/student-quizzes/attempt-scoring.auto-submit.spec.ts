@@ -19,6 +19,7 @@ function buildPrismaMock() {
 
 const QUIZ_WITH_ONE_QUESTION = {
   id: 'q1',
+  title: 'Sample quiz',
   passScore: null,
 };
 const QUESTIONS = [
@@ -70,7 +71,7 @@ describe('AttemptScoringService.autoSubmitIfExpired', () => {
     prisma.question.findMany.mockResolvedValue(QUESTIONS);
     prisma.attempt.update.mockResolvedValue({});
 
-    const service = new AttemptScoringService(prisma as any, eventsMock);
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
     const score = await service.autoSubmitIfExpired('expired-attempt');
 
     expect(score).not.toBeNull();
@@ -101,7 +102,7 @@ describe('AttemptScoringService.autoSubmitIfExpired', () => {
     prisma.$transaction.mockImplementation(async (fn: any) => fn(prisma));
     prisma.$executeRaw.mockResolvedValue(0); // claim fails -- quiz still open
 
-    const service = new AttemptScoringService(prisma as any, eventsMock);
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
     const score = await service.autoSubmitIfExpired('still-open-attempt');
 
     expect(score).toBeNull();
@@ -114,7 +115,7 @@ describe('AttemptScoringService.autoSubmitIfExpired', () => {
     prisma.$transaction.mockImplementation(async (fn: any) => fn(prisma));
     prisma.$executeRaw.mockResolvedValue(0); // claim fails -- status is no longer IN_PROGRESS
 
-    const service = new AttemptScoringService(prisma as any, eventsMock);
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
     const score = await service.autoSubmitIfExpired('already-done-attempt');
 
     expect(score).toBeNull();
@@ -125,10 +126,49 @@ describe('AttemptScoringService.autoSubmitIfExpired', () => {
     prisma.$transaction.mockImplementation(async (fn: any) => fn(prisma));
     prisma.$executeRaw.mockResolvedValue(0);
 
-    const service = new AttemptScoringService(prisma as any, eventsMock);
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
     await expect(
       service.autoSubmitIfExpired('does-not-exist'),
     ).resolves.toBeNull();
+  });
+
+  it('finalizes expired attempts that lack a start snapshot instead of failing forever', async () => {
+    const prisma = buildPrismaMock();
+    prisma.$transaction.mockImplementation(async (fn: any) => fn(prisma));
+    prisma.$executeRaw.mockResolvedValue(1);
+    prisma.attempt.findUnique.mockResolvedValue({
+      id: 'legacy-attempt',
+      studentId: 's1',
+      quizId: 'q1',
+      quiz: QUIZ_WITH_ONE_QUESTION,
+      questionSnapshot: null,
+      attemptAnswers: {},
+      submittedAt: new Date('2026-01-01T00:05:00Z'),
+    });
+    prisma.attempt.update.mockResolvedValue({});
+
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
+    const warnSpy = jest
+      .spyOn((service as any).logger, 'warn')
+      .mockImplementation(() => undefined);
+
+    const score = await service.autoSubmitIfExpired('legacy-attempt');
+
+    expect(score).toEqual(
+      expect.objectContaining({
+        rawScore: 0,
+        maxScore: 0,
+        percentage: 0,
+      }),
+    );
+    expect(prisma.attempt.update).toHaveBeenCalledWith({
+      where: { id: 'legacy-attempt' },
+      data: { score: 0 },
+    });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('legacy-attempt'),
+    );
+    expect(eventsMock.publish).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -164,7 +204,7 @@ describe('AttemptScoringService.sweepExpiredAttemptsForQuiz', () => {
     prisma.question.findMany.mockResolvedValue(QUESTIONS);
     prisma.attempt.update.mockResolvedValue({});
 
-    const service = new AttemptScoringService(prisma as any, eventsMock);
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
     const result = await service.sweepExpiredAttemptsForQuiz('q1');
 
     expect(result).toEqual({
@@ -180,7 +220,7 @@ describe('AttemptScoringService.sweepExpiredAttemptsForQuiz', () => {
     const prisma = buildPrismaMock();
     prisma.attempt.findMany.mockResolvedValue([]);
 
-    const service = new AttemptScoringService(prisma as any, eventsMock);
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
     const result = await service.sweepExpiredAttemptsForQuiz('q1');
 
     expect(result).toEqual({
@@ -200,7 +240,7 @@ describe('AttemptScoringService.sweepExpiredAttemptsForQuiz resilience', () => {
       { id: 'healthy-attempt' },
     ]);
 
-    const service = new AttemptScoringService(prisma as any, eventsMock as any);
+    const service = new AttemptScoringService(prisma as any, eventsMock as any, { sendQuizCompleted: jest.fn() } as any);
 
     const loggerSpy = jest
       .spyOn((service as any).logger, 'error')

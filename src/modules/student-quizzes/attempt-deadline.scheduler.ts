@@ -14,23 +14,24 @@ export class AttemptDeadlineScheduler {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async handleExpiredAttempts() {
-    const expiredQuizzes = await this.prisma.quiz.findMany({
-      where: {
-        closesAt: {
-          lte: new Date(),
-        },
-        attempts: {
-          some: {
-            status: 'IN_PROGRESS',
-          },
-        },
-      },
-      select: {
-        id: true,
-      },
-    });
+    // Multi-instance: set CRON_ENABLED=false on replicas; keep true on one leader.
+    if (process.env.CRON_ENABLED === 'false') {
+      return;
+    }
 
-    for (const quiz of expiredQuizzes) {
+    // Window closed OR attempt duration elapsed.
+    const expired = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT DISTINCT q.id
+      FROM "Quiz" q
+      INNER JOIN "Attempt" a ON a."quizId" = q.id
+      WHERE a.status = 'IN_PROGRESS'::"AttemptStatus"
+        AND (
+          q."close_at" <= (NOW() AT TIME ZONE 'UTC')
+          OR (a."started_at" + (q.duration * INTERVAL '1 minute')) <= (NOW() AT TIME ZONE 'UTC')
+        )
+    `;
+
+    for (const quiz of expired) {
       try {
         await this.attemptScoringService.sweepExpiredAttemptsForQuiz(quiz.id);
       } catch (error) {

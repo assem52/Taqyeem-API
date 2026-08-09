@@ -1,4 +1,8 @@
 import {
+  computeAttemptDeadline,
+  computeRemainingSeconds,
+} from './attempt-time';
+import {
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -9,6 +13,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ScoreEventsService } from './events/score-events.service';
+import { LearnerMailService } from '../../common/mail/learner-mail.service';
 import {
   AttemptAnswers,
   computeScore,
@@ -22,6 +27,8 @@ interface SubmitResult {
   freshlyScored: boolean;
   studentId: string;
   quizId: string;
+  quizTitle: string;
+  autoSubmitted?: boolean;
 }
 
 export interface StartAttemptResult {
@@ -35,6 +42,7 @@ export class AttemptScoringService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: ScoreEventsService,
+    private readonly learnerMail: LearnerMailService,
   ) {}
 
   async startAttempt(
@@ -158,13 +166,20 @@ export class AttemptScoringService {
             WHERE a.id = ${attemptId}::uuid
               AND a."quizId" = q.id
               AND a.status = 'IN_PROGRESS'::"AttemptStatus"
-              AND q."close_at" <= (NOW() AT TIME ZONE 'UTC')
+              AND (
+                q."close_at" <= (NOW() AT TIME ZONE 'UTC')
+                OR (a."started_at" + (q.duration * INTERVAL '1 minute')) <= (NOW() AT TIME ZONE 'UTC')
+              )
           `;
 
           if (claimed === 0) {
             return null;
           }
-          return this.scoreAndPersist(tx, attemptId);
+          // Legacy/seed rows may lack a snapshot; still finalize so the cron
+          // cannot retry the same attempt forever after a rolled-back claim.
+          return this.scoreAndPersist(tx, attemptId, undefined, {
+            allowMissingSnapshot: true,
+          });
         },
         { timeout: 10_000, maxWait: 5_000 },
       );
@@ -187,6 +202,7 @@ export class AttemptScoringService {
     };
     this.events.publish('slot1.quiz.attempt.scored', payload);
     this.events.publish('slot5.quiz.attempt.scored', payload);
+    void this.notifyQuizCompleted({ ...result, autoSubmitted: true });
 
     return result.score;
   }
@@ -222,9 +238,11 @@ export class AttemptScoringService {
     studentId: string,
     questionId: string,
     selectedOptionId: string | null,
+    textAnswer: string | null = null,
   ): Promise<void> {
     const entry = JSON.stringify({
       selectedOptionId,
+      textAnswer,
       answeredAt: new Date().toISOString(),
     });
 
@@ -242,6 +260,7 @@ export class AttemptScoringService {
         AND a.status = 'IN_PROGRESS'::"AttemptStatus"
         AND a."quizId" = q.id
         AND q."close_at" > (NOW() AT TIME ZONE 'UTC')
+        AND (a."started_at" + (q.duration * INTERVAL '1 minute')) > (NOW() AT TIME ZONE 'UTC')
     `;
 
     if (affected === 0) {
@@ -256,21 +275,23 @@ export class AttemptScoringService {
         throw new NotFoundException('Attempt not found');
       }
 
-      if (
-        attempt.status === 'IN_PROGRESS' &&
-        attempt.quiz.closesAt <= new Date()
-      ) {
-        // Prisma exposes the naive database timestamp as UTC, and Date is
-        // UTC-based, so this JS comparison is safe despite the SQL timezone fix.
-        try {
-          await this.autoSubmitIfExpired(attemptId);
-        } catch {
-          // The scheduler will retry the expired attempt on its next sweep.
-        }
-
-        throw new ConflictException(
-          'Quiz deadline has passed; attempt will be auto-submitted',
+      if (attempt.status === 'IN_PROGRESS') {
+        const remaining = computeRemainingSeconds(
+          attempt.startedAt,
+          attempt.quiz.duration,
+          attempt.quiz.closesAt,
         );
+        if (remaining <= 0) {
+          try {
+            await this.autoSubmitIfExpired(attemptId);
+          } catch {
+            // The scheduler will retry the expired attempt on its next sweep.
+          }
+
+          throw new ConflictException(
+            'Quiz deadline has passed; attempt will be auto-submitted',
+          );
+        }
       }
 
       throw new ConflictException('Cannot change answers after submission');
@@ -282,9 +303,10 @@ export class AttemptScoringService {
         attemptId,
         questionId,
         selectedOptionId,
+        textAnswer,
         answeredAt: new Date(),
       },
-      update: { selectedOptionId, answeredAt: new Date() },
+      update: { selectedOptionId, textAnswer, answeredAt: new Date() },
     });
   }
 
@@ -300,6 +322,7 @@ export class AttemptScoringService {
             UPDATE "Attempt" a
             SET status = CASE
               WHEN q."close_at" <= (NOW() AT TIME ZONE 'UTC')
+                OR (a."started_at" + (q.duration * INTERVAL '1 minute')) <= (NOW() AT TIME ZONE 'UTC')
                 THEN 'AUTO_SUBMITTED'::"AttemptStatus"
               ELSE 'SUBMITTED'::"AttemptStatus"
             END,
@@ -336,9 +359,34 @@ export class AttemptScoringService {
       };
       this.events.publish('slot1.quiz.attempt.scored', payload);
       this.events.publish('slot5.quiz.attempt.scored', payload);
+      void this.notifyQuizCompleted(result);
     }
 
     return result.score;
+  }
+
+  private async notifyQuizCompleted(result: SubmitResult): Promise<void> {
+    try {
+      const student = await this.prisma.student.findUnique({
+        where: { id: result.studentId },
+        select: { email: true, name: true },
+      });
+      if (!student?.email) return;
+
+      await this.learnerMail.sendQuizCompleted({
+        email: student.email,
+        learnerName: student.name,
+        quizTitle: result.quizTitle,
+        quizId: result.quizId,
+        percentage: result.score.percentage,
+        passed: result.score.passed,
+        autoSubmitted: result.autoSubmitted,
+      });
+    } catch (error: any) {
+      this.logger.warn(
+        `Quiz completion email skipped for attempt student=${result.studentId}: ${error?.message || error}`,
+      );
+    }
   }
 
   private isTransactionTimeout(error: unknown): boolean {
@@ -352,6 +400,7 @@ export class AttemptScoringService {
     tx: Prisma.TransactionClient,
     attemptId: string,
     studentId?: string,
+    opts?: { allowMissingSnapshot?: boolean },
   ): Promise<SubmitResult> {
     const attempt = await tx.attempt.findUnique({
       where: { id: attemptId },
@@ -362,13 +411,19 @@ export class AttemptScoringService {
       throw new ForbiddenException('Not authorized');
     }
 
-    if (!attempt.questionSnapshot) {
-      throw new ConflictException(
-        'Attempt has no start snapshot and cannot be scored safely.',
+    let questionSnapshot =
+      attempt.questionSnapshot as unknown as QuestionSnapshotItem[] | null;
+    if (!questionSnapshot) {
+      if (!opts?.allowMissingSnapshot) {
+        throw new ConflictException(
+          'Attempt has no start snapshot and cannot be scored safely.',
+        );
+      }
+      this.logger.warn(
+        `Attempt ${attemptId} has no start snapshot; finalizing with score 0`,
       );
+      questionSnapshot = [];
     }
-    const questionSnapshot =
-      attempt.questionSnapshot as unknown as QuestionSnapshotItem[];
 
     const answers = (attempt.attemptAnswers ?? {}) as unknown as AttemptAnswers;
     const passScorePercentage =
@@ -391,6 +446,7 @@ export class AttemptScoringService {
       freshlyScored: true,
       studentId: attempt.studentId,
       quizId: attempt.quizId,
+      quizTitle: attempt.quiz.title,
     };
   }
 
@@ -432,6 +488,7 @@ export class AttemptScoringService {
       freshlyScored: false,
       studentId: existing.studentId,
       quizId: existing.quizId,
+      quizTitle: existing.quiz.title,
     };
   }
 }

@@ -2,6 +2,7 @@ import { expect, describe, it, beforeEach, jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnalyticsService } from './analytics.service';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { QuestionAnalyticsService } from './question-analytics.service';
 
 describe('AnalyticsService', () => {
   let service: AnalyticsService;
@@ -36,12 +37,26 @@ describe('AnalyticsService', () => {
           return Promise.resolve(0);
         }),
       },
+      invitation: {
+        groupBy: jest.fn().mockImplementation(({ where }: any) => {
+          if (where.quizId === 'quiz-1') {
+            return Promise.resolve([{ email: 'a@x.com' }, { email: 'b@x.com' }]);
+          }
+          return Promise.resolve([]);
+        }),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AnalyticsService,
         { provide: PrismaService, useValue: prismaMock },
+        {
+          provide: QuestionAnalyticsService,
+          useValue: {
+            getQuestionAnalytics: jest.fn().mockResolvedValue([]),
+          },
+        },
       ],
     }).compile();
 

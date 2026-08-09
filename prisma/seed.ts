@@ -4,6 +4,7 @@ import {
   PrismaClient,
   QuestionType,
   QuizStatus,
+  ResultsPolicy,
   Role,
   StudentStatus,
 } from '@prisma/client';
@@ -21,6 +22,7 @@ const PUBLISHABLE_DRAFT_ID = '22222222-2222-2222-2222-222222222222';
 const INVALID_DRAFT_ID = '33333333-3333-3333-3333-333333333333';
 const EMPTY_DRAFT_ID = '44444444-4444-4444-4444-444444444444';
 const IN_PROGRESS_QUIZ_ID = '55555555-5555-5555-5555-555555555555';
+const CLOSED_RESULTS_QUIZ_ID = '77777777-7777-7777-7777-777777777777';
 
 // Week 3 — admin follow-up demo (see backend/docs/week-3/student-classification-for-followup.md)
 const FOLLOW_UP_DEMO_QUIZ_ID = '66666666-6666-6666-6666-666666666666';
@@ -32,7 +34,11 @@ const FLAGGED_EVE_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 const PASSED_FRANK_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
 
 async function main() {
+  await prisma.answer.deleteMany();
+  await prisma.integrityEvent.deleteMany();
   await prisma.attempt.deleteMany();
+  await prisma.emailLog.deleteMany();
+  await prisma.invitation.deleteMany();
   await prisma.enrollment.deleteMany();
   await prisma.quizOption.deleteMany();
   await prisma.question.deleteMany();
@@ -115,12 +121,17 @@ async function main() {
 
   const closedQuiz = await prisma.quiz.create({
     data: {
-      title: 'Closed Quiz',
-      description: 'Window has passed',
+      id: CLOSED_RESULTS_QUIZ_ID,
+      title: 'Closed Quiz — Results Ready',
+      description: 'Window closed; learner can review score and explanations',
       status: QuizStatus.PUBLISHED,
       openDate: dayAgo,
       closesAt: dayAgo,
       duration: 60,
+      passScore: 70,
+      resultsPolicy: ResultsPolicy.AFTER_CLOSE,
+      instructions: 'Demo closed exam. Results unlock after the window closes.',
+      integrityThreshold: 5,
     },
   });
 
@@ -255,11 +266,44 @@ async function main() {
     },
   });
 
+  const inProgressQuestion = await prisma.question.create({
+    data: {
+      quizId: inProgressQuiz.id,
+      text: 'In-progress demo: what is 3+1?',
+      type: QuestionType.MCQ,
+      points: 1,
+      position: 0,
+      options: {
+        create: [
+          { option: '3', isCorrect: false, position: 0 },
+          { option: '4', isCorrect: true, position: 1 },
+        ],
+      },
+    },
+    include: { options: { orderBy: { position: 'asc' } } },
+  });
+
   await prisma.attempt.create({
     data: {
       studentId: student.id,
       quizId: inProgressQuiz.id,
       status: AttemptStatus.IN_PROGRESS,
+      startedAt: now,
+      questionSnapshot: [
+        {
+          questionId: inProgressQuestion.id,
+          text: inProgressQuestion.text,
+          type: inProgressQuestion.type,
+          points: inProgressQuestion.points.toNumber(),
+          position: inProgressQuestion.position,
+          options: inProgressQuestion.options.map((option) => ({
+            id: option.id,
+            option: option.option,
+            isCorrect: option.isCorrect,
+            position: option.position,
+          })),
+        },
+      ],
     },
   });
 
@@ -270,6 +314,79 @@ async function main() {
       status: AttemptStatus.SUBMITTED,
       submittedAt: new Date(),
       score: 85,
+    },
+  });
+
+  const closedQ1 = await prisma.question.create({
+    data: {
+      quizId: closedQuiz.id,
+      text: 'Which HTTP status means success?',
+      type: QuestionType.MCQ,
+      points: 1,
+      position: 0,
+      explanation: '2xx responses indicate the request succeeded. 200 is the common success code.',
+      options: {
+        create: [
+          { option: '404', isCorrect: false, position: 0 },
+          { option: '200', isCorrect: true, position: 1 },
+          { option: '500', isCorrect: false, position: 2 },
+        ],
+      },
+    },
+    include: { options: true },
+  });
+
+  const closedQ2 = await prisma.question.create({
+    data: {
+      quizId: closedQuiz.id,
+      text: 'SQL SELECT retrieves rows from a table.',
+      type: QuestionType.TRUE_FALSE,
+      points: 1,
+      position: 1,
+      explanation: 'SELECT is the read query in SQL.',
+      options: {
+        create: [
+          { option: 'True', isCorrect: true, position: 0 },
+          { option: 'False', isCorrect: false, position: 1 },
+        ],
+      },
+    },
+    include: { options: true },
+  });
+
+  const closedCorrect1 = closedQ1.options.find((o) => o.isCorrect)!;
+  const closedWrong2 = closedQ2.options.find((o) => !o.isCorrect)!;
+
+  const closedAttempt = await prisma.attempt.create({
+    data: {
+      studentId: student.id,
+      quizId: closedQuiz.id,
+      status: AttemptStatus.SUBMITTED,
+      startedAt: dayAgo,
+      submittedAt: dayAgo,
+      score: 50,
+    },
+  });
+
+  await prisma.answer.createMany({
+    data: [
+      {
+        attemptId: closedAttempt.id,
+        questionId: closedQ1.id,
+        selectedOptionId: closedCorrect1.id,
+      },
+      {
+        attemptId: closedAttempt.id,
+        questionId: closedQ2.id,
+        selectedOptionId: closedWrong2.id,
+      },
+    ],
+  });
+
+  await prisma.invitation.create({
+    data: {
+      quizId: closedQuiz.id,
+      email: DEMO_STUDENT_EMAIL,
     },
   });
 
@@ -336,15 +453,18 @@ async function main() {
       duration: 60,
       passScore: 50,
       integrityThreshold: 5,
+      resultsPolicy: ResultsPolicy.IMMEDIATE,
+      instructions: 'Follow-up coaching demo quiz.',
     },
   });
 
-  await prisma.question.create({
+  const followUpQuestion = await prisma.question.create({
     data: {
       quizId: followUpDemoQuiz.id,
       text: 'What is 1+1?',
       type: QuestionType.MCQ,
       points: 1,
+      explanation: 'Basic arithmetic: 1 + 1 = 2.',
       options: {
         create: [
           { option: '1', isCorrect: false },
@@ -352,11 +472,15 @@ async function main() {
         ],
       },
     },
+    include: { options: true },
   });
 
   for (const s of followUpStudents) {
     await prisma.enrollment.create({
       data: { studentId: s.id, quizId: followUpDemoQuiz.id },
+    });
+    await prisma.invitation.create({
+      data: { quizId: followUpDemoQuiz.id, email: s.email },
     });
   }
 
@@ -365,6 +489,20 @@ async function main() {
       studentId: IN_PROGRESS_BOB_ID,
       quizId: followUpDemoQuiz.id,
       status: AttemptStatus.IN_PROGRESS,
+      startedAt: now,
+      questionSnapshot: [
+        {
+          questionId: followUpQuestion.id,
+          text: followUpQuestion.text,
+          type: followUpQuestion.type,
+          points: followUpQuestion.points.toNumber(),
+          options: followUpQuestion.options.map((option) => ({
+            id: option.id,
+            option: option.option,
+            isCorrect: option.isCorrect,
+          })),
+        },
+      ],
     },
   });
 
@@ -431,9 +569,13 @@ async function main() {
   console.log(`INVALID_DRAFT_QUIZ_ID=${invalidDraft.id}`);
   console.log(`EMPTY_DRAFT_QUIZ_ID=${emptyDraft.id}`);
   console.log(`IN_PROGRESS_QUIZ_ID=${inProgressQuiz.id}`);
+  console.log(`CLOSED_RESULTS_QUIZ_ID=${closedQuiz.id}`);
   console.log(`FOLLOW_UP_DEMO_QUIZ_ID=${followUpDemoQuiz.id}`);
   console.log(
     'Follow-up demo expected: 1 did-not-start, 1 in-progress, 1 failed, 1 low-score, 1 flagged (6 integrity events, threshold 5), 1 excluded',
+  );
+  console.log(
+    'Closed-with-results: assem.test can open Closed Quiz — Results Ready for review + explanations.',
   );
 }
 

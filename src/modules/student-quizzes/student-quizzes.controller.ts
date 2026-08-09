@@ -26,6 +26,14 @@ export class StudentQuizzesController {
     return this.studentQuizzesService.getAttempt(studentId, quizId);
   }
 
+  @Get(':quizId/results')
+  getResults(
+    @Param('quizId') quizId: string,
+    @CurrentUser('studentId') studentId: string,
+  ) {
+    return this.studentQuizzesService.getResults(studentId, quizId);
+  }
+
   // Deep-link access check: a student opening a direct link to one quiz,
   // as opposed to browsing the dashboard list.
   @Get(':quizId')
