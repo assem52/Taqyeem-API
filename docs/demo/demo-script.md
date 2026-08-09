@@ -1,10 +1,12 @@
 # Demo script — QnA assessment workbench
 
-**Goal:** 5-minute story: Launch → Sit → Result → Coach → Prove
+**Goal:** 5-minute story: Launch → Sit → Result → Coach → Prove  
+**Story / packaging:** `docs/product/packaging.md` · pitch page `/welcome`
 
 ## Setup
 - Backend running with migrated DB
 - Frontend running
+- Open `/welcome` once for the category story (optional cold open)
 - Admin: `admin@example.com` / `Admin123!`
 - Student account verified (or use `/verify`)
 
@@ -14,10 +16,9 @@
    “After every cohort quiz, instructors open five tools and still don’t know who to chase.”
 
 2. **Launch (60s)**  
-   - Admin → New quiz → fill instructions + results policy → Create & add questions  
-   - Add 2–3 MCQ/TF with explanations  
-   - Publish (button disabled until valid)  
-   - Invite emails → Copy invite link (works even when email is simulated)
+   - Admin → **Launch a cohort quiz** (guided wizard)  
+   - Basics → add questions → publish → invite  
+   - Copy invite link (works even when email is simulated)
 
 3. **Sit (60s)**  
    - Open invite as student → Continue to quiz  
@@ -27,9 +28,8 @@
 
 4. **Close the loop (90s)**  
    - Student results: score + Passed/Not yet + review/explanations  
-   - Admin Open quiz → Results: analytics, hardest questions, Open attempt  
-   - Follow-up: Email learner / Open attempt / Copy next step  
-   - Export CSV from Results
+   - Admin Open workspace → Results: **Outcomes snapshot** (sponsor screenshot) + CSV  
+   - Morning follow-up: Email learner / Open attempt / Copy next step  
 
 5. **Edge (60s)**  
    “Forms start the job. LMS overcomplicates it. QnA finishes it — invite, sit, teach, chase, prove.”
@@ -41,3 +41,4 @@ See also `docs/demo/known-issues.md`.
 - Integrity is for **Needs review**, never accusation
 - Graded exams do not show AI hints during the attempt
 - Seed includes **Closed Quiz — Results Ready** for review + explanations after close
+- Core vs Growth packaging is presentational (no billing gate yet)
