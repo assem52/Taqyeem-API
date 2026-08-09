@@ -274,4 +274,58 @@ export class AdminInvitationStatusService {
       results,
     };
   }
+
+  /**
+   * Re-dispatch invitation email for an existing invite (failed or operator resend).
+   */
+  async resendInvitation(
+    quizId: string,
+    invitationId: string,
+  ): Promise<{
+    email: string;
+    status: 'SENT' | 'FAILED';
+    inviteUrl: string;
+    reason?: string;
+    deliveryMode: 'live' | 'simulated';
+  }> {
+    const invitation = await this.prisma.invitation.findFirst({
+      where: { id: invitationId, quizId },
+      include: { quiz: { select: { title: true, status: true } } },
+    });
+
+    if (!invitation) {
+      throw new NotFoundException('Invitation not found for this quiz.');
+    }
+
+    if (invitation.quiz.status !== QuizStatus.PUBLISHED) {
+      throw new BadRequestException(
+        'Publish the quiz before resending invitations.',
+      );
+    }
+
+    const sendRes = await this.emailService.sendInvitationEmail(
+      invitation.id,
+      invitation.email,
+      invitation.quiz.title,
+    );
+
+    const inviteUrl = this.emailService.buildInviteUrl(invitation.id);
+
+    if (sendRes.status === 'SENT') {
+      return {
+        email: invitation.email,
+        status: 'SENT',
+        inviteUrl,
+        deliveryMode: this.emailService.deliveryMode,
+      };
+    }
+
+    return {
+      email: invitation.email,
+      status: 'FAILED',
+      inviteUrl,
+      reason: sendRes.errorMessage || 'Email dispatch failed',
+      deliveryMode: this.emailService.deliveryMode,
+    };
+  }
 }

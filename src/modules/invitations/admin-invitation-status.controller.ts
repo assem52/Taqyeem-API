@@ -46,4 +46,15 @@ export class AdminInvitationStatusController {
       dto.emails,
     );
   }
+
+  @Post('admin/quizzes/:quizId/invitations/:invitationId/resend')
+  resendInvitation(
+    @Param('quizId') quizId: string,
+    @Param('invitationId') invitationId: string,
+  ) {
+    return this.adminInvitationStatusService.resendInvitation(
+      quizId,
+      invitationId,
+    );
+  }
 }
