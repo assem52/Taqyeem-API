@@ -31,14 +31,16 @@ export class AttemptController {
   async saveAnswer(
     @Param('attemptId') attemptId: string,
     @Param('questionId') questionId: string,
-    @Body('selectedOptionId') selectedOptionId: string | null,
+    @Body('selectedOptionId') selectedOptionId: string | null | undefined,
+    @Body('textAnswer') textAnswer: string | null | undefined,
     @CurrentUser('studentId') studentId: string,
   ) {
     await this.attemptScoringService.saveAnswer(
       attemptId,
       studentId,
       questionId,
-      selectedOptionId,
+      selectedOptionId ?? null,
+      textAnswer ?? null,
     );
     return { saved: true };
   }

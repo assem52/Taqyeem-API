@@ -110,10 +110,13 @@ export class AdminQuizzesService {
       data: {
         title: dto.title,
         description: dto.description ?? null,
+        instructions: dto.instructions ?? null,
         duration: dto.duration ?? 60,
         openDate,
         closesAt,
         passScore: dto.passScore != null ? dto.passScore : null,
+        integrityThreshold: dto.integrityThreshold ?? 5,
+        resultsPolicy: dto.resultsPolicy ?? 'AFTER_CLOSE',
         status: QuizStatus.DRAFT,
       },
       include: {
@@ -208,6 +211,11 @@ export class AdminQuizzesService {
       };
     }
 
+    const attemptCount = await this.getAttemptCount(quizId);
+    if (attemptCount > 0) {
+      throw new ForbiddenException(ATTEMPT_LOCK_MESSAGE);
+    }
+
     const updated = await this.prisma.quiz.update({
       where: { id: quizId },
       data: { status: QuizStatus.DRAFT },
@@ -229,10 +237,16 @@ export class AdminQuizzesService {
       Object.keys(dto) as Array<keyof UpdateAdminQuizDto>
     ).filter((field) => dto[field] !== undefined);
 
+    const structuralFields: Array<keyof UpdateAdminQuizDto> = [
+      'duration',
+      'openDate',
+      'closesAt',
+      'passScore',
+    ];
+
     if (attemptCount > 0) {
-      const allowed: Array<keyof UpdateAdminQuizDto> = ['title', 'description'];
-      const hasDisallowed = providedFields.some(
-        (field) => !allowed.includes(field),
+      const hasDisallowed = providedFields.some((field) =>
+        structuralFields.includes(field),
       );
       if (hasDisallowed) {
         throw new ForbiddenException(ATTEMPT_LOCK_MESSAGE);
@@ -246,6 +260,15 @@ export class AdminQuizzesService {
     }
     if (dto.description !== undefined) {
       data.description = dto.description;
+    }
+    if (dto.instructions !== undefined) {
+      data.instructions = dto.instructions;
+    }
+    if (dto.integrityThreshold !== undefined) {
+      data.integrityThreshold = dto.integrityThreshold;
+    }
+    if (dto.resultsPolicy !== undefined) {
+      data.resultsPolicy = dto.resultsPolicy;
     }
 
     if (attemptCount === 0) {
@@ -462,10 +485,12 @@ export class AdminQuizzesService {
           duration: source.duration,
           passScore: source.passScore,
           integrityThreshold: source.integrityThreshold,
+          resultsPolicy: source.resultsPolicy,
           status: QuizStatus.DRAFT,
           questions: {
             create: source.questions.map((question) => ({
               text: question.text,
+              explanation: question.explanation,
               type: question.type,
               points: question.points,
               isHidden: question.isHidden,
@@ -623,11 +648,14 @@ export class AdminQuizzesService {
       quizId: quiz.id,
       title: quiz.title,
       description: quiz.description,
+      instructions: quiz.instructions,
       status: quiz.status,
       openDate: quiz.openDate.toISOString(),
       closesAt: quiz.closesAt.toISOString(),
       duration: quiz.duration,
       passScore: quiz.passScore != null ? Number(quiz.passScore) : null,
+      integrityThreshold: quiz.integrityThreshold,
+      resultsPolicy: quiz.resultsPolicy,
       hasAttempts: attemptCount > 0,
       attemptCount,
       canEditStructure: attemptCount === 0,

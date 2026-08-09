@@ -37,6 +37,15 @@ export class EmailService implements OnModuleInit {
    * Dispatch an invitation email to a target address.
    * Deterministically records an EmailLog entry with status SENT or FAILED.
    */
+  buildInviteUrl(invitationId: string): string {
+    const base = (
+      process.env.FRONTEND_URL ||
+      process.env.APP_URL ||
+      'http://localhost:5173'
+    ).replace(/\/$/, '');
+    return `${base}/invite/${invitationId}`;
+  }
+
   async sendInvitationEmail(
     invitationId: string,
     email: string,
@@ -44,6 +53,7 @@ export class EmailService implements OnModuleInit {
   ): Promise<SendInvitationEmailResult> {
     try {
       const normEmail = email.trim().toLowerCase();
+      const inviteUrl = this.buildInviteUrl(invitationId);
 
       // Precision test fixture failure triggers (anchored to local part or test domain)
       if (
@@ -57,12 +67,12 @@ export class EmailService implements OnModuleInit {
       if (this.isDeliveryEnabled) {
         // Transport dispatch logic when SMTP_HOST or EMAIL_DELIVERY_ENABLED is active
         this.logger.log(
-          `[LIVE DISPATCH] Invitation email dispatched to ${email} for quiz "${quizTitle}"`,
+          `[LIVE DISPATCH] Invitation email dispatched to ${email} for quiz "${quizTitle}" link=${inviteUrl}`,
         );
       } else {
-        // Transparent simulation mode logging
+        // Transparent simulation mode logging — always include the invite URL for operators.
         this.logger.log(
-          `[SIMULATED DISPATCH] Mock invitation logged for ${email} on quiz "${quizTitle}"`,
+          `[SIMULATED DISPATCH] Mock invitation for ${email} on quiz "${quizTitle}" — open: ${inviteUrl}`,
         );
       }
 

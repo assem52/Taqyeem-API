@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -57,7 +58,7 @@ export class AuthService {
         });
       }
 
-      return tx.user.create({
+      const created = await tx.user.create({
         data: {
           name: dto.name,
           email,
@@ -69,6 +70,9 @@ export class AuthService {
           studentId: student.id,
         },
       });
+
+      await this.enrollFromPendingInvites(tx, student.id, email);
+      return created;
     });
 
     if (process.env.NODE_ENV !== 'production') {
@@ -175,10 +179,41 @@ export class AuthService {
           where: { id: user.studentId },
           data: { status: 'VERIFIED' },
         });
+        await this.enrollFromPendingInvites(tx, user.studentId, email);
       }
     });
 
     return { message: 'Email verified successfully.' };
+  }
+
+  /** Access contract: matching invite email → Enrollment on register/verify. */
+  private async enrollFromPendingInvites(
+    tx: Prisma.TransactionClient,
+    studentId: string,
+    email: string,
+  ): Promise<void> {
+    const invitations = await tx.invitation.findMany({
+      where: {
+        email: normalizeEmail(email),
+        quiz: { status: 'PUBLISHED' },
+      },
+      select: { quizId: true },
+    });
+
+    const quizIds = [...new Set(invitations.map((row) => row.quizId))];
+    for (const quizId of quizIds) {
+      try {
+        await tx.enrollment.create({ data: { quizId, studentId } });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 
   async resendVerification(dto: ResendVerificationDto) {

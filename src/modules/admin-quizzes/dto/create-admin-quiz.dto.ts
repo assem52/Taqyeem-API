@@ -1,4 +1,5 @@
 import {
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -7,6 +8,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
+import { ResultsPolicy } from '@prisma/client';
 
 export class CreateAdminQuizDto {
   @IsNotEmpty()
@@ -16,6 +18,10 @@ export class CreateAdminQuizDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  instructions?: string;
 
   @IsOptional()
   @IsInt()
@@ -35,4 +41,14 @@ export class CreateAdminQuizDto {
   @Min(0)
   @Max(100)
   passScore?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  integrityThreshold?: number;
+
+  @IsOptional()
+  @IsEnum(ResultsPolicy)
+  resultsPolicy?: ResultsPolicy;
 }

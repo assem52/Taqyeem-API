@@ -46,6 +46,17 @@ export function deriveStudentState(
   return 'Not started';
 }
 
+function formatWhen(date: Date): string {
+  return date.toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
 export function resolveAccess(
   studentStatus: StudentStatusLike,
   studentState: StudentQuizState,
@@ -53,16 +64,28 @@ export function resolveAccess(
   closeDate: Date,
 ): AccessResult {
   if (studentStatus === 'UNVERIFIED') {
-    return { canStart: false, blockedReason: 'Verify your email before starting this quiz.' };
+    return {
+      canStart: false,
+      blockedReason: 'Verify your email before starting this quiz.',
+    };
   }
   if (studentState === 'Not open yet') {
-    return { canStart: false, blockedReason: `This quiz opens on ${openDate.toISOString()}.` };
+    return {
+      canStart: false,
+      blockedReason: `This quiz opens on ${formatWhen(openDate)}.`,
+    };
   }
   if (studentState === 'Closed') {
-    return { canStart: false, blockedReason: `This quiz closed on ${closeDate.toISOString()}.` };
+    return {
+      canStart: false,
+      blockedReason: `This quiz closed on ${formatWhen(closeDate)}.`,
+    };
   }
   if (studentState === 'Submitted') {
-    return { canStart: false, blockedReason: 'You have already submitted this quiz.' };
+    return {
+      canStart: false,
+      blockedReason: 'You have already submitted this quiz.',
+    };
   }
   return { canStart: true };
 }

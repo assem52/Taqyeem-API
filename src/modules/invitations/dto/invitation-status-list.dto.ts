@@ -10,6 +10,8 @@ export interface InvitationStatusRowDto {
   email: string;
   studentName: string | null;
   status: InvitationStatus;
+  invitationId?: string | null;
+  inviteUrl?: string | null;
   emailLogId?: string;
 }
 

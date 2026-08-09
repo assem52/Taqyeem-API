@@ -308,7 +308,9 @@ describe('AttemptScoringService.saveAnswer deadline', () => {
       id: 'attempt-1',
       studentId: 's1',
       status: 'IN_PROGRESS',
+      startedAt: new Date('2019-12-31T23:00:00Z'),
       quiz: {
+        duration: 60,
         closesAt: new Date('2020-01-01T00:00:00Z'),
       },
     });

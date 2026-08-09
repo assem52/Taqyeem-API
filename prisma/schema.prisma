@@ -34,6 +34,7 @@ model Attempt {
   answers          Answer[]
 
   @@unique([quizId, studentId])
+  @@index([status, startedAt])
 }
 
 model Enrollment {
@@ -46,21 +47,22 @@ model Enrollment {
 }
 
 model Quiz {
-  id                 String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   title              String
   description        String?
   instructions       String?
-  createdAt          DateTime     @default(now()) @map("created_at")
-  openDate           DateTime     @default(now()) @map("open_date")
-  duration           Int          @default(60)
-  closesAt           DateTime     @map("close_at")
-  passScore          Decimal?     @map("pass_score") @db.Decimal(5, 2)
-  status             QuizStatus   @default(DRAFT)
+  createdAt          DateTime      @default(now()) @map("created_at")
+  openDate           DateTime      @default(now()) @map("open_date")
+  duration           Int           @default(60)
+  closesAt           DateTime      @map("close_at")
+  passScore          Decimal?      @map("pass_score") @db.Decimal(5, 2)
+  status             QuizStatus    @default(DRAFT)
+  resultsPolicy      ResultsPolicy @default(AFTER_CLOSE) @map("results_policy")
   questions          Question[]
   enrollments        Enrollment[]
   invitations        Invitation[]
   attempts           Attempt[]
-  integrityThreshold Int          @default(5) @map("integrity_threshold")
+  integrityThreshold Int           @default(5) @map("integrity_threshold")
 }
 
 model User {
@@ -87,18 +89,19 @@ enum Role {
 }
 
 model Question {
-  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  quizId    String       @db.Uuid
-  quiz      Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  text      String
-  isHidden  Boolean      @default(false) @map("is_hidden")
-  position  Int          @default(0)
-  points    Decimal      @default(1) @db.Decimal(7, 2)
-  type      QuestionType @default(MCQ)
-  deletedAt DateTime?    @map("deleted_at")
-  updatedAt DateTime     @updatedAt @map("updated_at")
-  options   QuizOption[]
-  answers   Answer[]
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quizId       String       @db.Uuid
+  quiz         Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  text         String
+  explanation  String?      @db.Text
+  isHidden     Boolean      @default(false) @map("is_hidden")
+  position     Int          @default(0)
+  points       Decimal      @default(1) @db.Decimal(7, 2)
+  type         QuestionType @default(MCQ)
+  deletedAt    DateTime?    @map("deleted_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  options      QuizOption[]
+  answers      Answer[]
 
   @@index([quizId, deletedAt, position])
 }
@@ -170,6 +173,7 @@ model Answer {
   questionId       String   @db.Uuid
   question         Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
   selectedOptionId String?  @db.Uuid
+  textAnswer       String?  @map("text_answer") @db.Text
   answeredAt       DateTime @default(now()) @map("answered_at")
 
   @@id([attemptId, questionId])
@@ -228,6 +232,12 @@ enum QuizStatus {
   DRAFT
   PUBLISHED
   ARCHIVED
+}
+
+enum ResultsPolicy {
+  IMMEDIATE
+  AFTER_CLOSE
+  ADMIN_ONLY
 }
 
 enum SourceType {

@@ -1,4 +1,8 @@
 import {
+  computeAttemptDeadline,
+  computeRemainingSeconds,
+} from './attempt-time';
+import {
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -158,7 +162,10 @@ export class AttemptScoringService {
             WHERE a.id = ${attemptId}::uuid
               AND a."quizId" = q.id
               AND a.status = 'IN_PROGRESS'::"AttemptStatus"
-              AND q."close_at" <= (NOW() AT TIME ZONE 'UTC')
+              AND (
+                q."close_at" <= (NOW() AT TIME ZONE 'UTC')
+                OR (a."started_at" + (q.duration * INTERVAL '1 minute')) <= (NOW() AT TIME ZONE 'UTC')
+              )
           `;
 
           if (claimed === 0) {
@@ -222,9 +229,11 @@ export class AttemptScoringService {
     studentId: string,
     questionId: string,
     selectedOptionId: string | null,
+    textAnswer: string | null = null,
   ): Promise<void> {
     const entry = JSON.stringify({
       selectedOptionId,
+      textAnswer,
       answeredAt: new Date().toISOString(),
     });
 
@@ -242,6 +251,7 @@ export class AttemptScoringService {
         AND a.status = 'IN_PROGRESS'::"AttemptStatus"
         AND a."quizId" = q.id
         AND q."close_at" > (NOW() AT TIME ZONE 'UTC')
+        AND (a."started_at" + (q.duration * INTERVAL '1 minute')) > (NOW() AT TIME ZONE 'UTC')
     `;
 
     if (affected === 0) {
@@ -256,21 +266,23 @@ export class AttemptScoringService {
         throw new NotFoundException('Attempt not found');
       }
 
-      if (
-        attempt.status === 'IN_PROGRESS' &&
-        attempt.quiz.closesAt <= new Date()
-      ) {
-        // Prisma exposes the naive database timestamp as UTC, and Date is
-        // UTC-based, so this JS comparison is safe despite the SQL timezone fix.
-        try {
-          await this.autoSubmitIfExpired(attemptId);
-        } catch {
-          // The scheduler will retry the expired attempt on its next sweep.
-        }
-
-        throw new ConflictException(
-          'Quiz deadline has passed; attempt will be auto-submitted',
+      if (attempt.status === 'IN_PROGRESS') {
+        const remaining = computeRemainingSeconds(
+          attempt.startedAt,
+          attempt.quiz.duration,
+          attempt.quiz.closesAt,
         );
+        if (remaining <= 0) {
+          try {
+            await this.autoSubmitIfExpired(attemptId);
+          } catch {
+            // The scheduler will retry the expired attempt on its next sweep.
+          }
+
+          throw new ConflictException(
+            'Quiz deadline has passed; attempt will be auto-submitted',
+          );
+        }
       }
 
       throw new ConflictException('Cannot change answers after submission');
@@ -282,9 +294,10 @@ export class AttemptScoringService {
         attemptId,
         questionId,
         selectedOptionId,
+        textAnswer,
         answeredAt: new Date(),
       },
-      update: { selectedOptionId, answeredAt: new Date() },
+      update: { selectedOptionId, textAnswer, answeredAt: new Date() },
     });
   }
 
@@ -300,6 +313,7 @@ export class AttemptScoringService {
             UPDATE "Attempt" a
             SET status = CASE
               WHEN q."close_at" <= (NOW() AT TIME ZONE 'UTC')
+                OR (a."started_at" + (q.duration * INTERVAL '1 minute')) <= (NOW() AT TIME ZONE 'UTC')
                 THEN 'AUTO_SUBMITTED'::"AttemptStatus"
               ELSE 'SUBMITTED'::"AttemptStatus"
             END,

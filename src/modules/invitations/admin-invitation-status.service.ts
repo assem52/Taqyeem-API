@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EmailService } from './email.service';
 import { countByStatus, deriveInvitationStatuses } from './invitation-status';
@@ -17,6 +17,7 @@ import {
   BulkInviteItemResult,
   BulkInviteResponseDto,
 } from './dto/bulk-invite.dto';
+import { QuizStatus } from '@prisma/client';
 
 const normalizeEmail = (email: string): string => email.trim().toLowerCase();
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -111,15 +112,29 @@ export class AdminInvitationStatusService {
       INVITATION_STATUS_ORDER.map((status, index) => [status, index]),
     );
 
+    const invitationIdByEmail = new Map(
+      invitations.map((invitation) => [
+        normalizeEmail(invitation.email),
+        invitation.id,
+      ]),
+    );
+
     const rowDtos: InvitationStatusRowDto[] = rows
-      .map((row) => ({
-        email: row.email,
-        studentName: studentNameByEmail.get(row.email) ?? null,
-        status: row.status,
-        ...(row.status === InvitationStatus.FAILED
-          ? { emailLogId: failedLogIdByPerson.get(row.email) }
-          : {}),
-      }))
+      .map((row) => {
+        const invitationId = invitationIdByEmail.get(row.email);
+        return {
+          email: row.email,
+          studentName: studentNameByEmail.get(row.email) ?? null,
+          status: row.status,
+          invitationId: invitationId ?? null,
+          inviteUrl: invitationId
+            ? this.emailService.buildInviteUrl(invitationId)
+            : null,
+          ...(row.status === InvitationStatus.FAILED
+            ? { emailLogId: failedLogIdByPerson.get(row.email) }
+            : {}),
+        };
+      })
       .sort(
         (left, right) =>
           statusRank.get(left.status)! - statusRank.get(right.status)! ||
@@ -153,6 +168,12 @@ export class AdminInvitationStatusService {
 
     if (!quiz) {
       throw new NotFoundException('Quiz not found');
+    }
+
+    if (quiz.status !== QuizStatus.PUBLISHED) {
+      throw new BadRequestException(
+        'Publish the quiz before inviting students.',
+      );
     }
 
     const existingInvitations = await this.prisma.invitation.findMany({
@@ -219,6 +240,8 @@ export class AdminInvitationStatusService {
           results.push({
             email: normEmail,
             status: 'SENT',
+            invitationId: invitation.id,
+            inviteUrl: this.emailService.buildInviteUrl(invitation.id),
           });
         } else {
           failedCount++;
@@ -226,6 +249,8 @@ export class AdminInvitationStatusService {
             email: normEmail,
             status: 'FAILED',
             reason: sendRes.errorMessage || 'Email dispatch failed',
+            invitationId: invitation.id,
+            inviteUrl: this.emailService.buildInviteUrl(invitation.id),
           });
         }
       } catch (err: any) {

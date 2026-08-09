@@ -14,6 +14,8 @@ export class BulkInviteItemResult {
   email: string;
   status: BulkInviteResultStatus;
   reason?: string;
+  invitationId?: string;
+  inviteUrl?: string;
 }
 
 export class BulkInviteResponseDto {
