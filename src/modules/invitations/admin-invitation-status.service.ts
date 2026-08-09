@@ -208,6 +208,9 @@ export class AdminInvitationStatusService {
       const normEmail = normalizeEmail(trimmed);
 
       if (existingEmailSet.has(normEmail) || batchSeenSet.has(normEmail)) {
+        // Still enroll an existing student account if they somehow missed enrollment
+        // (invitation row exists, but dashboard only shows Enrollment).
+        await this.enrollExistingStudentByEmail(quizId, normEmail);
         duplicateCount++;
         results.push({
           email: normEmail,
@@ -227,6 +230,9 @@ export class AdminInvitationStatusService {
             email: normEmail,
           },
         });
+
+        // Existing accounts get dashboard access immediately (no accept-link step).
+        await this.enrollExistingStudentByEmail(quizId, normEmail);
 
         // Dispatch email deterministically
         const sendRes = await this.emailService.sendInvitationEmail(
@@ -273,6 +279,29 @@ export class AdminInvitationStatusService {
       deliveryMode: this.emailService.deliveryMode,
       results,
     };
+  }
+
+  /**
+   * If a Student already exists for this email, ensure Enrollment so the quiz
+   * appears on their dashboard / notification bell without accepting a link.
+   */
+  private async enrollExistingStudentByEmail(
+    quizId: string,
+    email: string,
+  ): Promise<void> {
+    const student = await this.prisma.student.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    if (!student) return;
+
+    await this.prisma.enrollment.upsert({
+      where: {
+        quizId_studentId: { quizId, studentId: student.id },
+      },
+      create: { quizId, studentId: student.id },
+      update: {},
+    });
   }
 
   /**
