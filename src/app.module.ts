@@ -14,6 +14,7 @@ import { AdminFollowUpModule } from './modules/admin-follow-up/admin-follow-up.m
 import { IntegrityModule } from './modules/integrity/integrity.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { ScheduleModule } from '@nestjs/schedule';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -21,6 +22,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
       envFilePath: '.env',
     }),
     PrismaModule,
+    ScheduleModule.forRoot(),
     AuthModule,
     DocumentsModule,
     EmbeddingsModule,

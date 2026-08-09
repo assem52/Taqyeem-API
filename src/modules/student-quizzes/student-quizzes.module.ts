@@ -4,6 +4,7 @@ import { StudentQuizzesController } from './student-quizzes.controller';
 import { AttemptController } from './attempt.controller';
 import { AttemptAdminController } from './attempt-admin.controller';
 import { AttemptScoringService } from './attempt-scoring.service';
+import { AttemptDeadlineScheduler } from './attempt-deadline.scheduler';
 import { ScoreEventsService } from './events/score-events.service';
 import { AuthModule } from '../../auth/auth.module';
 
@@ -14,6 +15,11 @@ import { AuthModule } from '../../auth/auth.module';
     AttemptController,
     AttemptAdminController,
   ],
-  providers: [StudentQuizzesService, AttemptScoringService, ScoreEventsService],
+  providers: [
+    StudentQuizzesService,
+    AttemptScoringService,
+    ScoreEventsService,
+    AttemptDeadlineScheduler,
+  ],
 })
 export class StudentQuizzesModule {}

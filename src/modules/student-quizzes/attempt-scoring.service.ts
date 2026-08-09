@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -30,6 +31,7 @@ export interface StartAttemptResult {
 
 @Injectable()
 export class AttemptScoringService {
+  private readonly logger = new Logger(AttemptScoringService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: ScoreEventsService,
@@ -151,12 +153,12 @@ export class AttemptScoringService {
         async (tx) => {
           const claimed = await tx.$executeRaw`
             UPDATE "Attempt" a
-            SET status = 'AUTO_SUBMITTED'::"AttemptStatus", "submitted_at" = NOW()
+            SET status = 'AUTO_SUBMITTED'::"AttemptStatus", "submitted_at" = (NOW() AT TIME ZONE 'UTC')
             FROM "Quiz" q
             WHERE a.id = ${attemptId}::uuid
               AND a."quizId" = q.id
               AND a.status = 'IN_PROGRESS'::"AttemptStatus"
-              AND q."close_at" <= NOW()
+              AND q."close_at" <= (NOW() AT TIME ZONE 'UTC')
           `;
 
           if (claimed === 0) {
@@ -191,18 +193,28 @@ export class AttemptScoringService {
 
   async sweepExpiredAttemptsForQuiz(
     quizId: string,
-  ): Promise<{ autoSubmittedCount: number }> {
+  ): Promise<{ autoSubmittedCount: number; failedCount: number }> {
     const candidates = await this.prisma.attempt.findMany({
       where: { quizId, status: 'IN_PROGRESS' },
     });
 
     let autoSubmittedCount = 0;
+    let failedCount = 0;
+
     for (const candidate of candidates) {
-      const result = await this.autoSubmitIfExpired(candidate.id);
-      if (result) autoSubmittedCount += 1;
+      try {
+        const result = await this.autoSubmitIfExpired(candidate.id);
+        if (result) autoSubmittedCount += 1;
+      } catch (error) {
+        failedCount += 1;
+        this.logger.error(
+          `Failed to auto-submit attempt ${candidate.id} for quiz ${quizId}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
     }
 
-    return { autoSubmittedCount };
+    return { autoSubmittedCount, failedCount };
   }
 
   async saveAnswer(
@@ -217,19 +229,25 @@ export class AttemptScoringService {
     });
 
     const affected = await this.prisma.$executeRaw`
-      UPDATE "Attempt"
+      UPDATE "Attempt" a
       SET "attemptAnswers" = jsonb_set(
-        COALESCE("attemptAnswers", '{}'::jsonb),
+        COALESCE(a."attemptAnswers", '{}'::jsonb),
         ARRAY[${questionId}]::text[],
         ${entry}::jsonb,
         true
       )
-      WHERE id = ${attemptId}::uuid AND "studentId" = ${studentId}::uuid AND status = 'IN_PROGRESS'::"AttemptStatus"
+      FROM "Quiz" q
+      WHERE a.id = ${attemptId}::uuid
+        AND a."studentId" = ${studentId}::uuid
+        AND a.status = 'IN_PROGRESS'::"AttemptStatus"
+        AND a."quizId" = q.id
+        AND q."close_at" > (NOW() AT TIME ZONE 'UTC')
     `;
 
     if (affected === 0) {
       const attempt = await this.prisma.attempt.findUnique({
         where: { id: attemptId },
+        include: { quiz: true },
       });
       if (attempt && attempt.studentId !== studentId) {
         throw new ForbiddenException('Not authorized to access this attempt');
@@ -237,6 +255,24 @@ export class AttemptScoringService {
       if (!attempt) {
         throw new NotFoundException('Attempt not found');
       }
+
+      if (
+        attempt.status === 'IN_PROGRESS' &&
+        attempt.quiz.closesAt <= new Date()
+      ) {
+        // Prisma exposes the naive database timestamp as UTC, and Date is
+        // UTC-based, so this JS comparison is safe despite the SQL timezone fix.
+        try {
+          await this.autoSubmitIfExpired(attemptId);
+        } catch {
+          // The scheduler will retry the expired attempt on its next sweep.
+        }
+
+        throw new ConflictException(
+          'Quiz deadline has passed; attempt will be auto-submitted',
+        );
+      }
+
       throw new ConflictException('Cannot change answers after submission');
     }
 
@@ -261,9 +297,18 @@ export class AttemptScoringService {
       result = await this.prisma.$transaction(
         async (tx) => {
           const claimed = await tx.$executeRaw`
-            UPDATE "Attempt"
-            SET status = 'SUBMITTED'::"AttemptStatus", "submitted_at" = NOW()
-            WHERE id = ${attemptId}::uuid AND "studentId" = ${studentId}::uuid AND status = 'IN_PROGRESS'::"AttemptStatus"
+            UPDATE "Attempt" a
+            SET status = CASE
+              WHEN q."close_at" <= (NOW() AT TIME ZONE 'UTC')
+                THEN 'AUTO_SUBMITTED'::"AttemptStatus"
+              ELSE 'SUBMITTED'::"AttemptStatus"
+            END,
+            "submitted_at" = (NOW() AT TIME ZONE 'UTC')
+            FROM "Quiz" q
+            WHERE a.id = ${attemptId}::uuid
+              AND a."studentId" = ${studentId}::uuid
+              AND a."quizId" = q.id
+              AND a.status = 'IN_PROGRESS'::"AttemptStatus"
           `;
 
           if (claimed === 0) {

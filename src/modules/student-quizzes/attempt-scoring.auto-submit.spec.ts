@@ -92,6 +92,8 @@ describe('AttemptScoringService.autoSubmitIfExpired', () => {
     expect(sql).toContain('AUTO_SUBMITTED');
     expect(sql).toContain('close_at');
     expect(sql).toContain('submitted_at');
+    expect(sql).toContain('AT TIME ZONE');
+    expect(sql).toContain('UTC');
   });
 
   it('returns null, publishes nothing, and writes nothing for an attempt whose quiz has not closed yet', async () => {
@@ -165,7 +167,10 @@ describe('AttemptScoringService.sweepExpiredAttemptsForQuiz', () => {
     const service = new AttemptScoringService(prisma as any, eventsMock);
     const result = await service.sweepExpiredAttemptsForQuiz('q1');
 
-    expect(result).toEqual({ autoSubmittedCount: 2 });
+    expect(result).toEqual({
+      autoSubmittedCount: 2,
+      failedCount: 0,
+    });
     expect(prisma.attempt.findMany).toHaveBeenCalledWith({
       where: { quizId: 'q1', status: 'IN_PROGRESS' },
     });
@@ -178,6 +183,46 @@ describe('AttemptScoringService.sweepExpiredAttemptsForQuiz', () => {
     const service = new AttemptScoringService(prisma as any, eventsMock);
     const result = await service.sweepExpiredAttemptsForQuiz('q1');
 
-    expect(result).toEqual({ autoSubmittedCount: 0 });
+    expect(result).toEqual({
+      autoSubmittedCount: 0,
+      failedCount: 0,
+    });
+  });
+});
+
+describe('AttemptScoringService.sweepExpiredAttemptsForQuiz resilience', () => {
+  it('reports partial success when one attempt fails', async () => {
+    const prisma = buildPrismaMock();
+    const eventsMock = { publish: jest.fn() };
+
+    prisma.attempt.findMany.mockResolvedValue([
+      { id: 'broken-attempt' },
+      { id: 'healthy-attempt' },
+    ]);
+
+    const service = new AttemptScoringService(prisma as any, eventsMock as any);
+
+    const loggerSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+
+    const autoSubmitSpy = jest
+      .spyOn(service, 'autoSubmitIfExpired')
+      .mockRejectedValueOnce(new Error('broken attempt'))
+      .mockResolvedValueOnce({} as any);
+
+    await expect(service.sweepExpiredAttemptsForQuiz('q1')).resolves.toEqual({
+      autoSubmittedCount: 1,
+      failedCount: 1,
+    });
+
+    expect(autoSubmitSpy).toHaveBeenCalledTimes(2);
+    expect(autoSubmitSpy).toHaveBeenNthCalledWith(1, 'broken-attempt');
+    expect(autoSubmitSpy).toHaveBeenNthCalledWith(2, 'healthy-attempt');
+
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('broken-attempt'),
+      expect.anything(),
+    );
   });
 });

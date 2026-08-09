@@ -267,6 +267,64 @@ describe('AttemptScoringService.submitAttempt', () => {
     const sql = Array.isArray(sqlParts) ? sqlParts.join('') : String(sqlParts);
 
     expect(sql).toContain('SUBMITTED');
+    expect(sql).toContain('AUTO_SUBMITTED');
+    expect(sql).toContain('CASE');
+    expect(sql).toContain('close_at');
     expect(sql).toContain('submitted_at');
+    expect(sql).toContain('AT TIME ZONE');
+    expect(sql).toContain('UTC');
+  });
+});
+
+describe('AttemptScoringService.saveAnswer deadline', () => {
+  it('guards answer writes with the quiz close_at deadline', async () => {
+    const prisma = buildPrismaMock();
+    const eventsMock = { publish: jest.fn() };
+
+    prisma.$executeRaw.mockResolvedValue(0);
+    prisma.attempt.findUnique.mockResolvedValue(null);
+
+    const service = new AttemptScoringService(prisma as any, eventsMock as any);
+
+    await expect(
+      service.saveAnswer('attempt-1', 's1', 'question-1', 'option-1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    const [sqlParts] = prisma.$executeRaw.mock.calls[0];
+    const sql = Array.isArray(sqlParts) ? sqlParts.join('') : String(sqlParts);
+
+    expect(sql).toContain('IN_PROGRESS');
+    expect(sql).toContain('close_at');
+    expect(sql).toContain('AT TIME ZONE');
+    expect(sql).toContain('UTC');
+  });
+
+  it('returns Conflict even if immediate auto-submit fails', async () => {
+    const prisma = buildPrismaMock();
+    const eventsMock = { publish: jest.fn() };
+
+    prisma.$executeRaw.mockResolvedValue(0);
+    prisma.attempt.findUnique.mockResolvedValue({
+      id: 'attempt-1',
+      studentId: 's1',
+      status: 'IN_PROGRESS',
+      quiz: {
+        closesAt: new Date('2020-01-01T00:00:00Z'),
+      },
+    });
+
+    const service = new AttemptScoringService(prisma as any, eventsMock as any);
+
+    const autoSubmitSpy = jest
+      .spyOn(service, 'autoSubmitIfExpired')
+      .mockRejectedValue(new Error('temporary scoring failure'));
+
+    await expect(
+      service.saveAnswer('attempt-1', 's1', 'question-1', 'option-1'),
+    ).rejects.toMatchObject({
+      message: 'Quiz deadline has passed; attempt will be auto-submitted',
+    });
+
+    expect(autoSubmitSpy).toHaveBeenCalledWith('attempt-1');
   });
 });
