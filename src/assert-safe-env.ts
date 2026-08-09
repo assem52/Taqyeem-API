@@ -2,6 +2,21 @@ export function isProductionEnv(nodeEnv: string | undefined): boolean {
   return nodeEnv === 'production';
 }
 
+/**
+ * Non-production escape code for /auth/verify only.
+ * Registration always emails a unique OTP; this code is a local fallback.
+ * Null in production.
+ */
+export function resolveDevVerificationCode(
+  nodeEnv: string | undefined = process.env.NODE_ENV,
+): string | null {
+  if (isProductionEnv(nodeEnv)) {
+    return null;
+  }
+  const fromEnv = process.env.DEV_VERIFICATION_CODE?.trim();
+  return fromEnv && fromEnv.length > 0 ? fromEnv : '00000';
+}
+
 export function assertNoMockAuthInProduction(
   nodeEnv: string | undefined,
   mockStudentId: string | undefined,

@@ -47,13 +47,16 @@ export class EmailService implements OnModuleInit {
         throw new Error(`SMTP dispatch failed for recipient ${email}`);
       }
 
-      const subject = `You're invited: ${quizTitle}`;
+      const subject = `You're invited to a quiz: ${quizTitle}`;
       const text = [
         `You've been invited to take "${quizTitle}" on Taqyem.`,
         '',
-        `Open your invite: ${inviteUrl}`,
+        'Open your invite (sign in or register with this email):',
+        inviteUrl,
         '',
-        'If the button in your email client does not work, paste the link into your browser.',
+        'If the link does not open, paste it into your browser.',
+        '',
+        '— Taqyem',
       ].join('\n');
 
       const sendResult = await this.mail.sendMail({

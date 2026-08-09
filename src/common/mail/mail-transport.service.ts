@@ -27,6 +27,10 @@ export class MailTransportService implements OnModuleInit {
                 pass: process.env.SMTP_PASS,
               }
             : undefined,
+        // Prevent register/login UX from hanging when SMTP is blocked/unreachable.
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 15_000,
       });
       this.mode = 'live';
       this.logger.log(`SMTP transport configured (${host}:${port}).`);

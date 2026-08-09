@@ -17,8 +17,15 @@ import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { MailTransportService } from '../common/mail/mail-transport.service';
+import { LearnerMailService } from '../common/mail/learner-mail.service';
+import { resolveDevVerificationCode } from '../assert-safe-env';
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+/** Per-registration OTP emailed to the user (always unique). */
+function createVerificationCode(): string {
+  return String(crypto.randomInt(100_000, 1_000_000));
+}
 
 const FORGOT_PASSWORD_MESSAGE =
   'If an account exists for that email, password reset instructions have been sent.';
@@ -31,6 +38,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly mail: MailTransportService,
+    private readonly learnerMail: LearnerMailService,
   ) {}
 
   /**
@@ -49,8 +57,9 @@ export class AuthService {
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
-    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationToken = createVerificationCode();
     const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const devEscapeCode = resolveDevVerificationCode();
 
     const user = await this.prisma.$transaction(async (tx) => {
       let student = await tx.student.findUnique({ where: { email } });
@@ -82,10 +91,28 @@ export class AuthService {
       return created;
     });
 
-    await this.sendVerificationEmail(user.email, verificationToken);
+    const mailResult = await this.learnerMail.sendRegistrationVerification(
+      user.email,
+      verificationToken,
+      { devEscapeCode: devEscapeCode ?? undefined },
+    );
 
+    if (!mailResult.delivered && !mailResult.simulated) {
+      this.logger.warn(
+        `Verification email was not delivered to ${user.email}` +
+          (devEscapeCode
+            ? `; use escape code ${devEscapeCode} in non-production.`
+            : '.'),
+      );
+    }
+
+    const emailedOk = mailResult.delivered || mailResult.simulated;
     return {
-      message: 'Registration successful. Please verify your email.',
+      message: emailedOk
+        ? 'Registration successful. Please verify your email.'
+        : devEscapeCode
+          ? `Registration successful, but the verification email could not be sent. Use escape code ${devEscapeCode} or resend.`
+          : 'Registration successful, but the verification email could not be sent. Use Resend verification or contact support.',
       email: user.email,
     };
   }
@@ -151,19 +178,34 @@ export class AuthService {
 
   async verifyEmail(dto: VerifyEmailDto) {
     const email = normalizeEmail(dto.email);
-    const user = await this.prisma.user.findFirst({
-      where: {
-        email,
-        verificationToken: dto.token,
-      },
-    });
+    const token = dto.token.trim();
+    const devCode = resolveDevVerificationCode();
 
-    if (!user) {
-      throw new BadRequestException('Invalid verification token or email.');
+    let user =
+      (await this.prisma.user.findFirst({
+        where: {
+          email,
+          verificationToken: token,
+        },
+      })) ?? null;
+
+    // Local/demo shortcut: accept the fixed development code for any unverified account.
+    if (!user && devCode && token === devCode) {
+      user = await this.prisma.user.findFirst({
+        where: { email, status: 'UNVERIFIED' },
+      });
     }
 
-    if (user.tokenExpiresAt && new Date() > user.tokenExpiresAt) {
-      throw new BadRequestException('Verification token has expired.');
+    if (!user) {
+      throw new BadRequestException('Invalid verification code or email.');
+    }
+
+    if (
+      !(devCode && token === devCode) &&
+      user.tokenExpiresAt &&
+      new Date() > user.tokenExpiresAt
+    ) {
+      throw new BadRequestException('Verification code has expired.');
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -232,8 +274,9 @@ export class AuthService {
       };
     }
 
-    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationToken = createVerificationCode();
     const tokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const devEscapeCode = resolveDevVerificationCode();
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -243,7 +286,9 @@ export class AuthService {
       },
     });
 
-    await this.sendVerificationEmail(email, verificationToken);
+    await this.learnerMail.sendRegistrationVerification(email, verificationToken, {
+      devEscapeCode: devEscapeCode ?? undefined,
+    });
 
     return {
       message:
@@ -268,33 +313,25 @@ export class AuthService {
       });
 
       const resetUrl = `${this.mail.frontendBaseUrl()}/reset-password?email=${encodeURIComponent(email)}&token=${encodeURIComponent(passwordResetToken)}`;
-      await this.mail.sendMail({
-        to: email,
-        subject: 'Reset your Taqyem password',
-        text: [
-          'Reset your password using this link:',
-          resetUrl,
-          '',
-          'This link expires in 1 hour. If you did not request a reset, ignore this email.',
-        ].join('\n'),
-      });
+      try {
+        await this.mail.sendMail({
+          to: email,
+          subject: 'Reset your Taqyem password',
+          text: [
+            'Reset your password using this link:',
+            resetUrl,
+            '',
+            'This link expires in 1 hour. If you did not request a reset, ignore this email.',
+          ].join('\n'),
+        });
+      } catch (error: any) {
+        this.logger.warn(
+          `Failed to send password-reset email to ${email}: ${error?.message || error}`,
+        );
+      }
     }
 
     return { message: FORGOT_PASSWORD_MESSAGE };
-  }
-
-  private async sendVerificationEmail(email: string, token: string) {
-    const verifyUrl = `${this.mail.frontendBaseUrl()}/verify?email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`;
-    await this.mail.sendMail({
-      to: email,
-      subject: 'Verify your Taqyem email',
-      text: [
-        'Welcome to Taqyem. Verify your email to access quizzes:',
-        verifyUrl,
-        '',
-        `Or enter this token on the verify page: ${token}`,
-      ].join('\n'),
-    });
   }
 
   async resetPassword(dto: ResetPasswordDto) {

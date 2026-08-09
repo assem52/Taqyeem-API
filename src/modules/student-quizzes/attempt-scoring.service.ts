@@ -13,6 +13,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ScoreEventsService } from './events/score-events.service';
+import { LearnerMailService } from '../../common/mail/learner-mail.service';
 import {
   AttemptAnswers,
   computeScore,
@@ -26,6 +27,8 @@ interface SubmitResult {
   freshlyScored: boolean;
   studentId: string;
   quizId: string;
+  quizTitle: string;
+  autoSubmitted?: boolean;
 }
 
 export interface StartAttemptResult {
@@ -39,6 +42,7 @@ export class AttemptScoringService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: ScoreEventsService,
+    private readonly learnerMail: LearnerMailService,
   ) {}
 
   async startAttempt(
@@ -198,6 +202,7 @@ export class AttemptScoringService {
     };
     this.events.publish('slot1.quiz.attempt.scored', payload);
     this.events.publish('slot5.quiz.attempt.scored', payload);
+    void this.notifyQuizCompleted({ ...result, autoSubmitted: true });
 
     return result.score;
   }
@@ -354,9 +359,34 @@ export class AttemptScoringService {
       };
       this.events.publish('slot1.quiz.attempt.scored', payload);
       this.events.publish('slot5.quiz.attempt.scored', payload);
+      void this.notifyQuizCompleted(result);
     }
 
     return result.score;
+  }
+
+  private async notifyQuizCompleted(result: SubmitResult): Promise<void> {
+    try {
+      const student = await this.prisma.student.findUnique({
+        where: { id: result.studentId },
+        select: { email: true, name: true },
+      });
+      if (!student?.email) return;
+
+      await this.learnerMail.sendQuizCompleted({
+        email: student.email,
+        learnerName: student.name,
+        quizTitle: result.quizTitle,
+        quizId: result.quizId,
+        percentage: result.score.percentage,
+        passed: result.score.passed,
+        autoSubmitted: result.autoSubmitted,
+      });
+    } catch (error: any) {
+      this.logger.warn(
+        `Quiz completion email skipped for attempt student=${result.studentId}: ${error?.message || error}`,
+      );
+    }
   }
 
   private isTransactionTimeout(error: unknown): boolean {
@@ -416,6 +446,7 @@ export class AttemptScoringService {
       freshlyScored: true,
       studentId: attempt.studentId,
       quizId: attempt.quizId,
+      quizTitle: attempt.quiz.title,
     };
   }
 
@@ -457,6 +488,7 @@ export class AttemptScoringService {
       freshlyScored: false,
       studentId: existing.studentId,
       quizId: existing.quizId,
+      quizTitle: existing.quiz.title,
     };
   }
 }
