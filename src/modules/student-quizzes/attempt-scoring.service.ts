@@ -171,7 +171,11 @@ export class AttemptScoringService {
           if (claimed === 0) {
             return null;
           }
-          return this.scoreAndPersist(tx, attemptId);
+          // Legacy/seed rows may lack a snapshot; still finalize so the cron
+          // cannot retry the same attempt forever after a rolled-back claim.
+          return this.scoreAndPersist(tx, attemptId, undefined, {
+            allowMissingSnapshot: true,
+          });
         },
         { timeout: 10_000, maxWait: 5_000 },
       );
@@ -366,6 +370,7 @@ export class AttemptScoringService {
     tx: Prisma.TransactionClient,
     attemptId: string,
     studentId?: string,
+    opts?: { allowMissingSnapshot?: boolean },
   ): Promise<SubmitResult> {
     const attempt = await tx.attempt.findUnique({
       where: { id: attemptId },
@@ -376,13 +381,19 @@ export class AttemptScoringService {
       throw new ForbiddenException('Not authorized');
     }
 
-    if (!attempt.questionSnapshot) {
-      throw new ConflictException(
-        'Attempt has no start snapshot and cannot be scored safely.',
+    let questionSnapshot =
+      attempt.questionSnapshot as unknown as QuestionSnapshotItem[] | null;
+    if (!questionSnapshot) {
+      if (!opts?.allowMissingSnapshot) {
+        throw new ConflictException(
+          'Attempt has no start snapshot and cannot be scored safely.',
+        );
+      }
+      this.logger.warn(
+        `Attempt ${attemptId} has no start snapshot; finalizing with score 0`,
       );
+      questionSnapshot = [];
     }
-    const questionSnapshot =
-      attempt.questionSnapshot as unknown as QuestionSnapshotItem[];
 
     const answers = (attempt.attemptAnswers ?? {}) as unknown as AttemptAnswers;
     const passScorePercentage =

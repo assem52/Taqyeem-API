@@ -266,11 +266,44 @@ async function main() {
     },
   });
 
+  const inProgressQuestion = await prisma.question.create({
+    data: {
+      quizId: inProgressQuiz.id,
+      text: 'In-progress demo: what is 3+1?',
+      type: QuestionType.MCQ,
+      points: 1,
+      position: 0,
+      options: {
+        create: [
+          { option: '3', isCorrect: false, position: 0 },
+          { option: '4', isCorrect: true, position: 1 },
+        ],
+      },
+    },
+    include: { options: { orderBy: { position: 'asc' } } },
+  });
+
   await prisma.attempt.create({
     data: {
       studentId: student.id,
       quizId: inProgressQuiz.id,
       status: AttemptStatus.IN_PROGRESS,
+      startedAt: now,
+      questionSnapshot: [
+        {
+          questionId: inProgressQuestion.id,
+          text: inProgressQuestion.text,
+          type: inProgressQuestion.type,
+          points: inProgressQuestion.points.toNumber(),
+          position: inProgressQuestion.position,
+          options: inProgressQuestion.options.map((option) => ({
+            id: option.id,
+            option: option.option,
+            isCorrect: option.isCorrect,
+            position: option.position,
+          })),
+        },
+      ],
     },
   });
 
@@ -425,7 +458,7 @@ async function main() {
     },
   });
 
-  await prisma.question.create({
+  const followUpQuestion = await prisma.question.create({
     data: {
       quizId: followUpDemoQuiz.id,
       text: 'What is 1+1?',
@@ -439,6 +472,7 @@ async function main() {
         ],
       },
     },
+    include: { options: true },
   });
 
   for (const s of followUpStudents) {
@@ -455,6 +489,20 @@ async function main() {
       studentId: IN_PROGRESS_BOB_ID,
       quizId: followUpDemoQuiz.id,
       status: AttemptStatus.IN_PROGRESS,
+      startedAt: now,
+      questionSnapshot: [
+        {
+          questionId: followUpQuestion.id,
+          text: followUpQuestion.text,
+          type: followUpQuestion.type,
+          points: followUpQuestion.points.toNumber(),
+          options: followUpQuestion.options.map((option) => ({
+            id: option.id,
+            option: option.option,
+            isCorrect: option.isCorrect,
+          })),
+        },
+      ],
     },
   });
 
