@@ -2,6 +2,7 @@ import { expect, describe, it, beforeEach, jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnalyticsService } from './analytics.service';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { QuestionAnalyticsService } from './question-analytics.service';
 
 describe('AnalyticsService', () => {
   let service: AnalyticsService;
@@ -50,6 +51,12 @@ describe('AnalyticsService', () => {
       providers: [
         AnalyticsService,
         { provide: PrismaService, useValue: prismaMock },
+        {
+          provide: QuestionAnalyticsService,
+          useValue: {
+            getQuestionAnalytics: jest.fn().mockResolvedValue([]),
+          },
+        },
       ],
     }).compile();
 
