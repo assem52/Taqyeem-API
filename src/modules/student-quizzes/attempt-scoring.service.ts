@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -30,6 +31,7 @@ export interface StartAttemptResult {
 
 @Injectable()
 export class AttemptScoringService {
+  private readonly logger = new Logger(AttemptScoringService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: ScoreEventsService,
@@ -191,28 +193,28 @@ export class AttemptScoringService {
 
   async sweepExpiredAttemptsForQuiz(
     quizId: string,
-  ): Promise<{ autoSubmittedCount: number }> {
+  ): Promise<{ autoSubmittedCount: number; failedCount: number }> {
     const candidates = await this.prisma.attempt.findMany({
       where: { quizId, status: 'IN_PROGRESS' },
     });
 
     let autoSubmittedCount = 0;
-    let firstError: unknown = null;
+    let failedCount = 0;
 
     for (const candidate of candidates) {
       try {
         const result = await this.autoSubmitIfExpired(candidate.id);
         if (result) autoSubmittedCount += 1;
       } catch (error) {
-        firstError ??= error;
+        failedCount += 1;
+        this.logger.error(
+          `Failed to auto-submit attempt ${candidate.id} for quiz ${quizId}`,
+          error instanceof Error ? error.stack : String(error),
+        );
       }
     }
 
-    if (firstError) {
-      throw firstError;
-    }
-
-    return { autoSubmittedCount };
+    return { autoSubmittedCount, failedCount };
   }
 
   async saveAnswer(
@@ -258,9 +260,16 @@ export class AttemptScoringService {
         attempt.status === 'IN_PROGRESS' &&
         attempt.quiz.closesAt <= new Date()
       ) {
-        await this.autoSubmitIfExpired(attemptId);
+        // Prisma exposes the naive database timestamp as UTC, and Date is
+        // UTC-based, so this JS comparison is safe despite the SQL timezone fix.
+        try {
+          await this.autoSubmitIfExpired(attemptId);
+        } catch {
+          // The scheduler will retry the expired attempt on its next sweep.
+        }
+
         throw new ConflictException(
-          'Quiz deadline has passed; attempt was auto-submitted',
+          'Quiz deadline has passed; attempt will be auto-submitted',
         );
       }
 

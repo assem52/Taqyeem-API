@@ -167,7 +167,10 @@ describe('AttemptScoringService.sweepExpiredAttemptsForQuiz', () => {
     const service = new AttemptScoringService(prisma as any, eventsMock);
     const result = await service.sweepExpiredAttemptsForQuiz('q1');
 
-    expect(result).toEqual({ autoSubmittedCount: 2 });
+    expect(result).toEqual({
+      autoSubmittedCount: 2,
+      failedCount: 0,
+    });
     expect(prisma.attempt.findMany).toHaveBeenCalledWith({
       where: { quizId: 'q1', status: 'IN_PROGRESS' },
     });
@@ -180,12 +183,15 @@ describe('AttemptScoringService.sweepExpiredAttemptsForQuiz', () => {
     const service = new AttemptScoringService(prisma as any, eventsMock);
     const result = await service.sweepExpiredAttemptsForQuiz('q1');
 
-    expect(result).toEqual({ autoSubmittedCount: 0 });
+    expect(result).toEqual({
+      autoSubmittedCount: 0,
+      failedCount: 0,
+    });
   });
 });
 
 describe('AttemptScoringService.sweepExpiredAttemptsForQuiz resilience', () => {
-  it('continues processing later attempts when one attempt fails', async () => {
+  it('reports partial success when one attempt fails', async () => {
     const prisma = buildPrismaMock();
     const eventsMock = { publish: jest.fn() };
 
@@ -196,17 +202,27 @@ describe('AttemptScoringService.sweepExpiredAttemptsForQuiz resilience', () => {
 
     const service = new AttemptScoringService(prisma as any, eventsMock as any);
 
-    const error = new Error('broken attempt');
+    const loggerSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
 
     const autoSubmitSpy = jest
       .spyOn(service, 'autoSubmitIfExpired')
-      .mockRejectedValueOnce(error)
-      .mockResolvedValueOnce(null);
+      .mockRejectedValueOnce(new Error('broken attempt'))
+      .mockResolvedValueOnce({} as any);
 
-    await expect(service.sweepExpiredAttemptsForQuiz('q1')).rejects.toBe(error);
+    await expect(service.sweepExpiredAttemptsForQuiz('q1')).resolves.toEqual({
+      autoSubmittedCount: 1,
+      failedCount: 1,
+    });
 
     expect(autoSubmitSpy).toHaveBeenCalledTimes(2);
     expect(autoSubmitSpy).toHaveBeenNthCalledWith(1, 'broken-attempt');
     expect(autoSubmitSpy).toHaveBeenNthCalledWith(2, 'healthy-attempt');
+
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('broken-attempt'),
+      expect.anything(),
+    );
   });
 });
