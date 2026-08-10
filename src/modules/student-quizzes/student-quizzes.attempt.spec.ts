@@ -1,9 +1,9 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { AttemptScoringService } from './attempt-scoring.service';
 import { StudentQuizzesController } from './student-quizzes.controller';
 import { StudentQuizzesService } from './student-quizzes.service';
-import { AttemptScoringService } from './attempt-scoring.service';
 
 const quizId = '11111111-1111-1111-1111-111111111111';
 const studentIdA = 'aaaaaa01-0000-0000-0000-000000000000';
@@ -37,13 +37,16 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
       ],
     }).compile();
 
-    controller = module.get<StudentQuizzesController>(StudentQuizzesController);
+    controller = module.get<StudentQuizzesController>(
+      StudentQuizzesController,
+    );
     service = module.get<StudentQuizzesService>(StudentQuizzesService);
   });
 
   describe('Controller wiring (identity resolved by StudentAuthGuard)', () => {
     it('should pass the resolved studentId through to the service', async () => {
       prismaMock.student.findUnique.mockResolvedValue({ id: studentIdA });
+
       prismaMock.attempt.findUnique.mockResolvedValue({
         id: attemptId,
         quizId,
@@ -58,9 +61,11 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
           closesAt: new Date('2099-01-01T00:00:00Z'),
         },
       });
+
       prismaMock.question.findMany.mockResolvedValue([]);
 
       const result = await controller.getAttempt(quizId, studentIdA);
+
       expect(result).toBeDefined();
       expect(result.id).toBe(attemptId);
     });
@@ -69,6 +74,7 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
   describe('Service ownership & retrieval checks', () => {
     it('should throw NotFoundException (404) if student does not exist', async () => {
       prismaMock.student.findUnique.mockResolvedValue(null);
+
       await expect(service.getAttempt(studentIdA, quizId)).rejects.toThrow(
         NotFoundException,
       );
@@ -88,7 +94,6 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
         return Promise.resolve({ id: where.id });
       });
 
-      // Prisma attempt lookup with quizId_studentId compound key returns null for Student B
       prismaMock.attempt.findUnique.mockImplementation(({ where }: any) => {
         if (
           where.quizId_studentId &&
@@ -106,6 +111,7 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
             },
           });
         }
+
         return Promise.resolve(null);
       });
 
@@ -116,6 +122,7 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
 
     it('should return complete attempt data with questions (hiding isCorrect)', async () => {
       prismaMock.student.findUnique.mockResolvedValue({ id: studentIdA });
+
       prismaMock.attempt.findUnique.mockResolvedValue({
         id: attemptId,
         quizId,
@@ -124,36 +131,53 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
         startedAt: new Date(),
         submittedAt: null,
         score: null,
-        attemptAnswers: { q1: { selectedOptionId: 'opt-1' } },
+        attemptAnswers: {
+          q1: {
+            selectedOptionId: 'opt-1',
+          },
+        },
         quiz: {
           duration: 60,
           closesAt: new Date('2099-01-01T00:00:00Z'),
         },
       });
+
       prismaMock.question.findMany.mockResolvedValue([
         {
           id: 'q1',
           text: 'Sample Question 1',
           type: 'MCQ',
           options: [
-            { id: 'opt-1', option: 'Option A' },
-            { id: 'opt-2', option: 'Option B' },
+            {
+              id: 'opt-1',
+              option: 'Option A',
+            },
+            {
+              id: 'opt-2',
+              option: 'Option B',
+            },
           ],
         },
       ]);
 
       const res = await service.getAttempt(studentIdA, quizId);
+
       expect(res.id).toBe(attemptId);
       expect(res.quizId).toBe(quizId);
       expect(res.studentId).toBe(studentIdA);
       expect(res.status).toBe('IN_PROGRESS');
-      expect(res.attemptAnswers).toEqual({ q1: { selectedOptionId: 'opt-1' } });
+      expect(res.attemptAnswers).toEqual({
+        q1: {
+          selectedOptionId: 'opt-1',
+        },
+      });
       expect(res.questions).toHaveLength(1);
       expect(res.questions[0].options[0]).not.toHaveProperty('isCorrect');
     });
 
     it('resumes from the immutable snapshot without reading live questions', async () => {
       prismaMock.student.findUnique.mockResolvedValue({ id: studentIdA });
+
       prismaMock.attempt.findUnique.mockResolvedValue({
         id: attemptId,
         quizId,
@@ -187,7 +211,9 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
       const result = await service.getAttempt(studentIdA, quizId);
 
       expect(result.questions[0].text).toBe('Historical text');
-      expect(result.questions[0].options[0]).not.toHaveProperty('isCorrect');
+      expect(result.questions[0].options[0]).not.toHaveProperty(
+        'isCorrect',
+      );
       expect(prismaMock.question.findMany).not.toHaveBeenCalled();
     });
   });

@@ -12,6 +12,8 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
+// Increment when demo seed scenarios change so test/demo runs can identify the exact fixture version.
+const SEED_VERSION = '2026.08.10-l5-v1';
 const DEMO_STUDENT_EMAIL = 'assem.test@example.com';
 const DEMO_STUDENT_PASSWORD = 'Student123!';
 const DEMO_ADMIN_EMAIL = 'admin@example.com';
@@ -324,7 +326,8 @@ async function main() {
       type: QuestionType.MCQ,
       points: 1,
       position: 0,
-      explanation: '2xx responses indicate the request succeeded. 200 is the common success code.',
+      explanation:
+        '2xx responses indicate the request succeeded. 200 is the common success code.',
       options: {
         create: [
           { option: '404', isCorrect: false, position: 0 },
@@ -562,8 +565,11 @@ async function main() {
   // Alice: no attempt → DID_NOT_START
 
   console.log('Seed complete.');
+  console.log(`SEED_VERSION=${SEED_VERSION}`);
   console.log(`MOCK_STUDENT_ID=${student.id}`);
-  console.log(`DEMO_STUDENT_LOGIN=${DEMO_STUDENT_EMAIL} / ${DEMO_STUDENT_PASSWORD}`);
+  console.log(
+    `DEMO_STUDENT_LOGIN=${DEMO_STUDENT_EMAIL} / ${DEMO_STUDENT_PASSWORD}`,
+  );
   console.log(`DEMO_ADMIN_LOGIN=${DEMO_ADMIN_EMAIL} / ${DEMO_ADMIN_PASSWORD}`);
   console.log(`PUBLISHABLE_DRAFT_QUIZ_ID=${publishableDraft.id}`);
   console.log(`INVALID_DRAFT_QUIZ_ID=${invalidDraft.id}`);
