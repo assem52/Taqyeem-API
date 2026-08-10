@@ -463,6 +463,6 @@ None. All required endpoints for Student Entry, Gateway Instructions, Invitation
    - Student endpoints are protected by `StudentAuthGuard`.
    - **Authentication Resolution Logic**:
      1. **Bearer Token Check**: If an `Authorization: Bearer <jwtToken>` header is present, `StudentAuthGuard` delegates to Passport JWT strategy to validate the token, and requires `request.user.studentId` to exist.
-     2. **Header / Env Fallback**: If NO `Bearer` header is provided, `StudentAuthGuard` checks `request.headers['x-student-id']` or `process.env.MOCK_STUDENT_ID`. If either is set, it constructs a synthetic student user (`{ userId: null, role: 'STUDENT', studentId, via: 'mock-header' }`) and allows the request.
-     3. **Failure State**: If neither a valid Bearer token nor `x-student-id` / `MOCK_STUDENT_ID` is present, it throws `401 Unauthorized` (`"Missing student identity. Log in, or send x-student-id / set MOCK_STUDENT_ID in development."`).
-   - **Security Warning**: The `StudentAuthGuard` fallback is NOT environment-gated and is currently active in all environments, including production. A request that sends `x-student-id: <studentId>` without an `Authorization` header can be authenticated as that student. Full production token enforcement is tracked in issue #29.
+     2. **Production Mode Enforcement**: In production (`NODE_ENV=production`), `Authorization: Bearer <jwtToken>` is strictly mandatory. Requests without a valid Bearer token are rejected with `401 Unauthorized`.
+     3. **Development / Test Fallback**: In non-production environments (`NODE_ENV !== 'production'`), if NO `Bearer` header is provided, `StudentAuthGuard` falls back to `request.headers['x-student-id']` or `process.env.MOCK_STUDENT_ID` for local development testing.
+     4. **Failure State**: If neither a valid Bearer token nor a development fallback identity is present, it throws `401 Unauthorized`.
