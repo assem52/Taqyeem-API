@@ -15,7 +15,7 @@ model Student {
   status      StudentStatus @default(VERIFIED)
   enrollments Enrollment[]
   attempts    Attempt[]
-  user        User?
+  user        User?قو
 }
 
 model Attempt {

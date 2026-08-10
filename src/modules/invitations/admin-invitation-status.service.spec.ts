@@ -13,20 +13,7 @@ function createService() {
     emailLog: { findMany: jest.fn() },
   };
 
-  const emailService = {
-    buildInviteUrl: jest.fn(
-      (invitationId: string) => `http://localhost:5173/invite/${invitationId}`,
-    ),
-  };
-
-  return {
-    service: new AdminInvitationStatusService(
-      prisma as never,
-      emailService as never,
-    ),
-    prisma,
-    emailService,
-  };
+  return { service: new AdminInvitationStatusService(prisma as never, {} as never), prisma };
 }
 
 describe('AdminInvitationStatusService', () => {

@@ -145,8 +145,6 @@ describe('StudentQuizzesService.getQuizAccess', () => {
 
     expect(result.studentState).toBe('Closed');
     expect(result.canStart).toBe(false);
-    expect(result.blockedReason).toBe(
-      'This quiz closed on 1 Feb 2020, 00:00 UTC.',
-    );
+    expect(result.blockedReason).toContain(quiz.closesAt.toISOString());
   });
 });

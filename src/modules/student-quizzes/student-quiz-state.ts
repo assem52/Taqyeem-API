@@ -54,7 +54,6 @@ function formatWhen(date: Date): string {
     hour: '2-digit',
     minute: '2-digit',
     timeZoneName: 'short',
-    timeZone: 'UTC',
   });
 }
 
