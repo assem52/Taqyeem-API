@@ -15,7 +15,6 @@ function buildContext(
 }
 
 describe('StudentAuthGuard', () => {
-  const originalEnv = process.env.NODE_ENV;
   const originalMock = process.env.MOCK_STUDENT_ID;
   const originalEnv = process.env.NODE_ENV;
   let guard: StudentAuthGuard;
@@ -27,7 +26,6 @@ describe('StudentAuthGuard', () => {
   });
 
   afterEach(() => {
-    process.env.NODE_ENV = originalEnv;
     process.env.MOCK_STUDENT_ID = originalMock;
     process.env.NODE_ENV = originalEnv;
   });
