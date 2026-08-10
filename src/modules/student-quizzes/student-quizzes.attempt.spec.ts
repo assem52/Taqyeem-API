@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { StudentQuizzesController } from './student-quizzes.controller';
 import { StudentQuizzesService } from './student-quizzes.service';
+import { AttemptScoringService } from './attempt-scoring.service';
 
 const quizId = '11111111-1111-1111-1111-111111111111';
 const studentIdA = 'aaaaaa01-0000-0000-0000-000000000000';
@@ -32,6 +33,7 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
       providers: [
         StudentQuizzesService,
         { provide: PrismaService, useValue: prismaMock },
+        { provide: AttemptScoringService, useValue: {} },
       ],
     }).compile();
 

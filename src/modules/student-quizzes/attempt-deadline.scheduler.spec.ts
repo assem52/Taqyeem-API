@@ -3,6 +3,7 @@ import { AttemptDeadlineScheduler } from './attempt-deadline.scheduler';
 describe('AttemptDeadlineScheduler', () => {
   it('sweeps expired quizzes that still have in-progress attempts', async () => {
     const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'quiz-1' }, { id: 'quiz-2' }]),
       quiz: {
         findMany: jest
           .fn()
