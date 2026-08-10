@@ -4,11 +4,6 @@ describe('AttemptDeadlineScheduler', () => {
   it('sweeps expired quizzes that still have in-progress attempts', async () => {
     const prisma = {
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'quiz-1' }, { id: 'quiz-2' }]),
-      quiz: {
-        findMany: jest
-          .fn()
-          .mockResolvedValue([{ id: 'quiz-1' }, { id: 'quiz-2' }]),
-      },
     };
 
     const attemptScoringService = {
@@ -24,21 +19,11 @@ describe('AttemptDeadlineScheduler', () => {
 
     await scheduler.handleExpiredAttempts();
 
-    expect(prisma.quiz.findMany).toHaveBeenCalledWith({
-      where: {
-        closesAt: {
-          lte: expect.any(Date),
-        },
-        attempts: {
-          some: {
-            status: 'IN_PROGRESS',
-          },
-        },
-      },
-      select: {
-        id: true,
-      },
-    });
+    const [sqlParts] = prisma.$queryRaw.mock.calls[0];
+    const sql = Array.isArray(sqlParts) ? sqlParts.join('') : String(sqlParts);
+
+    expect(sql).toContain('IN_PROGRESS');
+    expect(sql).toContain('AT TIME ZONE');
 
     expect(
       attemptScoringService.sweepExpiredAttemptsForQuiz,

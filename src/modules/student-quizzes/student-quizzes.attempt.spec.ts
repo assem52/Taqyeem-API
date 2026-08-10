@@ -53,6 +53,10 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
         submittedAt: null,
         score: null,
         attemptAnswers: {},
+        quiz: {
+          duration: 60,
+          closesAt: new Date('2099-01-01T00:00:00Z'),
+        },
       });
       prismaMock.question.findMany.mockResolvedValue([]);
 
@@ -95,6 +99,11 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
             quizId,
             studentId: studentIdA,
             status: 'IN_PROGRESS',
+            startedAt: new Date(),
+            quiz: {
+              duration: 60,
+              closesAt: new Date('2099-01-01T00:00:00Z'),
+            },
           });
         }
         return Promise.resolve(null);
@@ -112,10 +121,14 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
         quizId,
         studentId: studentIdA,
         status: 'IN_PROGRESS',
-        startedAt: new Date('2026-08-01T10:00:00Z'),
+        startedAt: new Date(),
         submittedAt: null,
         score: null,
         attemptAnswers: { q1: { selectedOptionId: 'opt-1' } },
+        quiz: {
+          duration: 60,
+          closesAt: new Date('2099-01-01T00:00:00Z'),
+        },
       });
       prismaMock.question.findMany.mockResolvedValue([
         {
@@ -150,6 +163,10 @@ describe('StudentQuizzesController & Service - getAttempt', () => {
         submittedAt: null,
         score: null,
         attemptAnswers: {},
+        quiz: {
+          duration: 60,
+          closesAt: new Date('2099-01-01T00:00:00Z'),
+        },
         questionSnapshot: [
           {
             questionId: 'q-snapshot',
