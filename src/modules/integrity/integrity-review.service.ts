@@ -77,6 +77,7 @@ export class IntegrityReviewService {
         student: true,
         quiz: true,
         integrityEvents: { orderBy: { occurredAt: 'asc' } },
+        answers: true,
       },
     });
 
@@ -91,11 +92,22 @@ export class IntegrityReviewService {
     const snapshot =
       attempt.questionSnapshot as unknown as QuestionSnapshotItem[];
     const answers = (attempt.attemptAnswers ?? {}) as unknown as AttemptAnswers;
+    const essayAwards: Record<string, number> = {};
+    const gradeByQuestion = new Map(
+      attempt.answers.map((row) => [row.questionId, row]),
+    );
+    for (const row of attempt.answers) {
+      if (row.awardedPoints != null) {
+        essayAwards[row.questionId] = Number(row.awardedPoints);
+      }
+    }
+
     const passScore =
       attempt.quiz.passScore != null ? Number(attempt.quiz.passScore) : null;
     const scoreDetail = computeScore(snapshot, answers, {
       passScorePercentage: passScore,
       submittedAt: attempt.submittedAt ?? new Date(),
+      essayAwards,
     });
 
     const eventCount = attempt.integrityEvents.length;
@@ -138,19 +150,29 @@ export class IntegrityReviewService {
       },
       questions: snapshot.map((question) => {
         const answer = answers[question.questionId];
+        const graded = gradeByQuestion.get(question.questionId);
         const selectedOptionId = answer?.selectedOptionId ?? null;
         const selected = question.options.find((o) => o.id === selectedOptionId);
         const correct = question.options.find((o) => o.isCorrect);
+        const awardedPoints =
+          graded?.awardedPoints != null ? Number(graded.awardedPoints) : null;
         return {
           questionId: question.questionId,
           text: question.text,
           type: question.type,
+          points: question.points,
           selectedOptionId,
           selectedOptionText: selected?.option ?? null,
-          textAnswer: answer?.textAnswer ?? null,
+          textAnswer: answer?.textAnswer ?? graded?.textAnswer ?? null,
           correctOptionText: correct?.option ?? null,
           isCorrect:
-            question.type === 'OPEN_ENDED' ? null : Boolean(selected?.isCorrect),
+            question.type === 'OPEN_ENDED'
+              ? null
+              : Boolean(selected?.isCorrect),
+          awardedPoints,
+          aiFeedback: graded?.aiFeedback ?? null,
+          gradingStatus: graded?.gradingStatus ?? null,
+          explanation: question.explanation ?? null,
         };
       }),
     };
