@@ -11,6 +11,7 @@ import { DocumentsModule } from './modules/documents/dto/documents.module';
 import { EmbeddingsModule } from './modules/embeddings/embeddings.module';
 import { IngestionModule } from './modules/ingestion/ingestion.module';
 import { SearchModule } from './modules/search/dto/search.module';
+import { AskModule } from './modules/ask/ask.module';
 import { StudentQuizzesModule } from './modules/student-quizzes/student-quizzes.module';
 import { AdminQuizzesModule } from './modules/admin-quizzes/admin-quizzes.module';
 import { AdminFollowUpModule } from './modules/admin-follow-up/admin-follow-up.module';
@@ -42,6 +43,7 @@ import { MiddlewareConsumer, NestModule } from '@nestjs/common';
     EmbeddingsModule,
     IngestionModule,
     SearchModule,
+    AskModule,
     StudentQuizzesModule,
     AdminQuizzesModule,
     AdminFollowUpModule,
