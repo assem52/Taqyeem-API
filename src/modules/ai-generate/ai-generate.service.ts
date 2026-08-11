@@ -14,7 +14,7 @@ import {
 export type GeneratedQuestionDraft = {
   text: string;
   explanation?: string;
-  type: 'MCQ' | 'TRUE_FALSE';
+  type: 'MCQ' | 'TRUE_FALSE' | 'OPEN_ENDED';
   points: number;
   options: Array<{ option: string; isCorrect: boolean }>;
 };
@@ -123,7 +123,9 @@ export class AiGenerateService {
         ? 'All questions must be type "MCQ" with 4 options.'
         : typePreference === GenerateQuestionTypePreference.TRUE_FALSE
           ? 'All questions must be type "TRUE_FALSE" with exactly options "True" and "False".'
-          : 'Mix MCQ and TRUE_FALSE. MCQ must have 3-4 options. TRUE_FALSE must use exactly "True" and "False".';
+          : typePreference === GenerateQuestionTypePreference.OPEN_ENDED
+            ? 'All questions must be type "OPEN_ENDED" (essay). options must be []. Put grading rubric in explanation.'
+            : 'Mix MCQ, TRUE_FALSE, and OPEN_ENDED. MCQ 3-4 options. TRUE_FALSE uses "True"/"False". OPEN_ENDED has options [] and a rubric in explanation.';
 
     const sourceBlock = combinedSource
       ? `SOURCE MATERIAL:\n${combinedSource.slice(0, 24000)}`
@@ -131,12 +133,13 @@ export class AiGenerateService {
 
     const prompt = [
       'You are an expert assessment author for an education platform.',
-      `Create exactly ${count} objective quiz questions.`,
+      `Create exactly ${count} quiz questions.`,
       typeInstruction,
       'Rules:',
       '- Return ONLY valid JSON (no markdown fences).',
-      '- Shape: {"questions":[{"text":"...","explanation":"...","type":"MCQ"|"TRUE_FALSE","points":1,"options":[{"option":"...","isCorrect":true/false}]}]}',
-      '- Exactly one option must have isCorrect true per question.',
+      '- Shape: {"questions":[{"text":"...","explanation":"...","type":"MCQ"|"TRUE_FALSE"|"OPEN_ENDED","points":1,"options":[{"option":"...","isCorrect":true/false}]}]}',
+      '- Objective types: exactly one option isCorrect true. OPEN_ENDED: options must be [].',
+      '- For OPEN_ENDED, explanation is the grading rubric for AI/human graders.',
       '- Keep wording clear and unambiguous.',
       '- Prefer the provided source material when present; otherwise use the topic.',
       '',
@@ -237,7 +240,7 @@ export class AiGenerateService {
     if (!text) return null;
 
     let type = String(raw.type ?? 'MCQ').toUpperCase();
-    if (type !== 'MCQ' && type !== 'TRUE_FALSE') {
+    if (type !== 'MCQ' && type !== 'TRUE_FALSE' && type !== 'OPEN_ENDED') {
       type = 'MCQ';
     }
 
@@ -255,7 +258,9 @@ export class AiGenerateService {
       })
       .filter(Boolean) as Array<{ option: string; isCorrect: boolean }>;
 
-    if (type === 'TRUE_FALSE') {
+    if (type === 'OPEN_ENDED') {
+      options = [];
+    } else if (type === 'TRUE_FALSE') {
       options = [
         {
           option: 'True',
@@ -298,7 +303,7 @@ export class AiGenerateService {
     return {
       text,
       explanation,
-      type: type as QuestionType.MCQ | QuestionType.TRUE_FALSE,
+      type: type as QuestionType.MCQ | QuestionType.TRUE_FALSE | QuestionType.OPEN_ENDED,
       points,
       options,
     };

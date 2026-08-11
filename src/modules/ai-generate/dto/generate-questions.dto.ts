@@ -14,6 +14,7 @@ import { QuestionType } from '../../questions/dto/create-question.dto';
 export enum GenerateQuestionTypePreference {
   MCQ = 'MCQ',
   TRUE_FALSE = 'TRUE_FALSE',
+  OPEN_ENDED = 'OPEN_ENDED',
   MIXED = 'MIXED',
 }
 
