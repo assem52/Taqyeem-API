@@ -62,7 +62,7 @@ cp .env.example .env
 | `MOCK_STUDENT_ID` | Optional | Dual-mode student header fallback (seed UUID below) |
 | `PORT` | No | HTTP port (default `3000`) |
 | `OPENAI_API_KEY` | For RAG search | Needed for ingestion/search embeddings |
-| `GEMINI_API_KEY` | For RAG answers | Needed for `POST /ask` answer generation |
+| `GEMINI_API_KEY` | For RAG answers / chat / AI generate | Needed for `POST /ask`, `POST /chat`, `POST /admin/ai/generate-questions` |
 | `GEMINI_MODEL` | No | Defaults to `gemini-2.0-flash` |
 
 **Seed student UUID** (fixed in `prisma/seed.ts`):
