@@ -36,7 +36,7 @@ export class AiGenerateService {
       const text = (parsed.text || '').replace(/\u0000/g, '').trim();
       if (!text) {
         throw new BadRequestException(
-          'That PDF has no extractable text (it may be image-only). Paste the text instead.',
+          'That PDF has no extractable text (it may be image-only). Upload it as an image for OCR, or paste the text instead.',
         );
       }
       return text;
@@ -53,24 +53,64 @@ export class AiGenerateService {
     }
   }
 
+  async extractImageText(buffer: Buffer): Promise<string> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const Tesseract = require('tesseract.js') as {
+        recognize: (
+          image: Buffer,
+          lang: string,
+        ) => Promise<{ data: { text?: string } }>;
+      };
+      const result = await Tesseract.recognize(buffer, 'eng');
+      const text = (result.data?.text || '').replace(/\u0000/g, '').trim();
+      if (!text) {
+        throw new BadRequestException(
+          'OCR found no readable text in that image. Try a clearer photo or paste the text.',
+        );
+      }
+      return text;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      this.logger.error(
+        `OCR failed: ${error instanceof Error ? error.message : error}`,
+      );
+      throw new BadRequestException(
+        'Could not read text from that image. Try another image or paste the text instead.',
+      );
+    }
+  }
+
   async generateQuestions(
     dto: GenerateQuestionsDto,
-    pdfText?: string,
-  ): Promise<{ success: true; drafts: GeneratedQuestionDraft[]; sourceSummary: string }> {
+    attachmentText?: string,
+    attachmentKind?: 'pdf' | 'image',
+  ): Promise<{
+    success: true;
+    drafts: GeneratedQuestionDraft[];
+    sourceSummary: string;
+  }> {
     const topic = dto.topic?.trim() || '';
     const content = dto.content?.trim() || '';
-    const fromPdf = pdfText?.trim() || '';
-    const combinedSource = [content, fromPdf].filter(Boolean).join('\n\n').trim();
+    const fromAttachment = attachmentText?.trim() || '';
+    const combinedSource = [content, fromAttachment]
+      .filter(Boolean)
+      .join('\n\n')
+      .trim();
 
     if (!topic && !combinedSource) {
       throw new BadRequestException(
-        'Provide a topic, pasted content, and/or a PDF to generate questions.',
+        'Provide a topic, pasted content, and/or a PDF/image to generate questions.',
       );
     }
 
-    if (fromPdf && fromPdf.length < 40) {
+    if (fromAttachment && fromAttachment.length < 40) {
       throw new BadRequestException(
-        'That PDF did not contain enough extractable text to generate questions.',
+        attachmentKind === 'image'
+          ? 'OCR did not find enough text in that image to generate questions.'
+          : 'That PDF did not contain enough extractable text to generate questions.',
       );
     }
 
@@ -118,7 +158,11 @@ export class AiGenerateService {
     const sourceSummary = [
       topic ? `topic: ${topic}` : null,
       content ? 'pasted text' : null,
-      fromPdf ? 'PDF text' : null,
+      attachmentKind === 'pdf'
+        ? 'PDF text'
+        : attachmentKind === 'image'
+          ? 'image OCR'
+          : null,
     ]
       .filter(Boolean)
       .join(' + ');
