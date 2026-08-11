@@ -265,6 +265,8 @@ enum EmailLogStatus {
 
 enum IntegrityEventType {
   VISIBILITY_LOST
+  COPY
+  SCREENSHOT
 }
 
 enum StudentStatus {
