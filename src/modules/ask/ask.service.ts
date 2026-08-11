@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { SearchService } from '../search/dto/search.service';
-import { GeminiService } from './gemini.service';
+import { LlmService } from './llm.service';
 import { AskDto } from './dto/ask.dto';
 
 type RetrievedChunk = {
@@ -19,7 +19,7 @@ type RetrievedChunk = {
 export class AskService {
   constructor(
     private readonly searchService: SearchService,
-    private readonly geminiService: GeminiService,
+    private readonly llmService: LlmService,
   ) {}
 
   async ask(dto: AskDto) {
@@ -68,7 +68,7 @@ export class AskService {
       'ANSWER:',
     ].join('\n');
 
-    const answer = await this.geminiService.generateText(prompt);
+    const answer = await this.llmService.generateText(prompt);
 
     return {
       success: true,

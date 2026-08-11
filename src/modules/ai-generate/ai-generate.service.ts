@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { validateQuestion } from '../questions';
 import { QuestionType } from '../questions/dto/create-question.dto';
-import { GeminiService } from '../ask/gemini.service';
+import { LlmService } from '../ask/llm.service';
 import {
   GenerateQuestionTypePreference,
   GenerateQuestionsDto,
@@ -23,7 +23,7 @@ export type GeneratedQuestionDraft = {
 export class AiGenerateService {
   private readonly logger = new Logger(AiGenerateService.name);
 
-  constructor(private readonly geminiService: GeminiService) {}
+  constructor(private readonly llmService: LlmService) {}
 
   async extractPdfText(buffer: Buffer): Promise<string> {
     let parser: { getText: () => Promise<{ text?: string }>; destroy: () => Promise<void> } | null =
@@ -106,7 +106,7 @@ export class AiGenerateService {
       .filter(Boolean)
       .join('\n');
 
-    const raw = await this.geminiService.generateText(prompt);
+    const raw = await this.llmService.generateText(prompt);
     const drafts = this.parseAndValidateDrafts(raw).slice(0, count);
 
     if (drafts.length === 0) {

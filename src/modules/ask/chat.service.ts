@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { GeminiService } from './gemini.service';
+import { LlmService } from './llm.service';
 import { ChatDto } from './dto/chat.dto';
 
 const SYSTEM_PROMPT = [
@@ -12,7 +12,7 @@ const SYSTEM_PROMPT = [
 
 @Injectable()
 export class ChatService {
-  constructor(private readonly geminiService: GeminiService) {}
+  constructor(private readonly llmService: LlmService) {}
 
   async chat(dto: ChatDto) {
     const history = (dto.history ?? [])
@@ -30,7 +30,7 @@ export class ChatService {
       .filter(Boolean)
       .join('\n');
 
-    const answer = await this.geminiService.generateText(prompt);
+    const answer = await this.llmService.generateText(prompt);
 
     return {
       success: true,
