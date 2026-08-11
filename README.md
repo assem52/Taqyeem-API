@@ -61,7 +61,9 @@ cp .env.example .env
 | `ADMIN_API_TOKEN` | Recommended | Dual-mode admin header fallback; match frontend `VITE_ADMIN_TOKEN` |
 | `MOCK_STUDENT_ID` | Optional | Dual-mode student header fallback (seed UUID below) |
 | `PORT` | No | HTTP port (default `3000`) |
-| `OPENAI_API_KEY` | For RAG | Only needed for ingestion/search modules |
+| `OPENAI_API_KEY` | For RAG search | Needed for ingestion/search embeddings |
+| `GEMINI_API_KEY` | For RAG answers | Needed for `POST /ask` answer generation |
+| `GEMINI_MODEL` | No | Defaults to `gemini-2.0-flash` |
 
 **Seed student UUID** (fixed in `prisma/seed.ts`):
 

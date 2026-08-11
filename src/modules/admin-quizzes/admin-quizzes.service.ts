@@ -25,6 +25,8 @@ import {
   SetQuestionVisibilityDto,
   UpdateQuestionDto,
 } from './dto/question-bank.dto';
+import { AddBankQuestionsToQuizDto } from '../question-bank/dto/question-bank.dto';
+import { QuestionBankService } from '../question-bank/question-bank.service';
 
 type QuizWithQuestions = Prisma.QuizGetPayload<{
   include: {
@@ -40,7 +42,10 @@ type QuestionWithOptions = Prisma.QuestionGetPayload<{
 
 @Injectable()
 export class AdminQuizzesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly questionBankService: QuestionBankService,
+  ) {}
 
   async getQuizForAdmin(quizId: string): Promise<AdminQuizDto> {
     const quiz = await this.loadQuiz(quizId);
@@ -348,6 +353,68 @@ export class AdminQuizzesService {
       },
     });
     return this.toAdminQuestionDto(question);
+  }
+
+  /**
+   * Copy selected bank questions into this quiz as independent rows.
+   * Bank edits after copy do not affect the quiz (attempt-safe).
+   */
+  async addQuestionsFromBank(
+    quizId: string,
+    dto: AddBankQuestionsToQuizDto,
+  ) {
+    await this.requireUnlockedQuiz(quizId);
+    const bankQuestions =
+      await this.questionBankService.getActiveBankQuestions(
+        dto.bankQuestionIds,
+      );
+
+    for (const bankQuestion of bankQuestions) {
+      this.assertValidQuestion({
+        text: bankQuestion.text,
+        type: bankQuestion.type,
+        isHidden: false,
+        options: bankQuestion.options,
+      });
+    }
+
+    const lastQuestion = await this.prisma.question.findFirst({
+      where: { quizId, deletedAt: null },
+      orderBy: [{ position: 'desc' }, { id: 'desc' }],
+      select: { position: true },
+    });
+    let nextPosition = (lastQuestion?.position ?? -1) + 1;
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const results: QuestionWithOptions[] = [];
+      for (const bankQuestion of bankQuestions) {
+        const question = await tx.question.create({
+          data: {
+            quizId,
+            text: bankQuestion.text,
+            explanation: bankQuestion.explanation,
+            type: bankQuestion.type,
+            points: bankQuestion.points,
+            position: nextPosition,
+            options: {
+              create: bankQuestion.options.map((option) => ({
+                option: option.option,
+                isCorrect: option.isCorrect,
+                position: option.position,
+              })),
+            },
+          },
+          include: {
+            options: { orderBy: [{ position: 'asc' }, { id: 'asc' }] },
+          },
+        });
+        nextPosition += 1;
+        results.push(question);
+      }
+      return results;
+    });
+
+    return created.map((question) => this.toAdminQuestionDto(question));
   }
 
   async updateQuestion(

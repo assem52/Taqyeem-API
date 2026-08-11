@@ -22,6 +22,7 @@ import {
   SetQuestionVisibilityDto,
   UpdateQuestionDto,
 } from './dto/question-bank.dto';
+import { AddBankQuestionsToQuizDto } from '../question-bank/dto/question-bank.dto';
 
 @Controller('admin/quizzes')
 @UseGuards(AdminGuard)
@@ -49,6 +50,15 @@ export class AdminQuizzesController {
     @Body() dto: CreateQuestionDto,
   ) {
     return this.adminQuizzesService.createQuestion(quizId, dto);
+  }
+
+  /** Keep static segments before :questionId routes. */
+  @Post(':quizId/questions/from-bank')
+  addQuestionsFromBank(
+    @Param('quizId') quizId: string,
+    @Body() dto: AddBankQuestionsToQuizDto,
+  ) {
+    return this.adminQuizzesService.addQuestionsFromBank(quizId, dto);
   }
 
   /** Keep this static segment before the :questionId PATCH route. */
