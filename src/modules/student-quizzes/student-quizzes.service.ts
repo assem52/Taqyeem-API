@@ -314,14 +314,29 @@ export class StudentQuizzesService {
       [];
     const answers = (attempt.attemptAnswers ?? {}) as unknown as AttemptAnswers;
 
+    const gradedRows = await this.prisma.answer.findMany({
+      where: { attemptId: attempt.id },
+    });
+    const essayAwards: Record<string, number> = {};
+    const gradeByQuestion = new Map(
+      gradedRows.map((row) => [row.questionId, row]),
+    );
+    for (const row of gradedRows) {
+      if (row.awardedPoints != null) {
+        essayAwards[row.questionId] = Number(row.awardedPoints);
+      }
+    }
+
     const scoreDetail = computeScore(snapshot, answers, {
       passScorePercentage: passScore,
       submittedAt: attempt.submittedAt ?? now,
+      essayAwards,
     });
 
     const review = reviewUnlocked
       ? snapshot.map((question) => {
           const answer = answers[question.questionId];
+          const graded = gradeByQuestion.get(question.questionId);
           const selectedOptionId = answer?.selectedOptionId ?? null;
           const selected = question.options.find(
             (option) => option.id === selectedOptionId,
@@ -338,10 +353,17 @@ export class StudentQuizzesService {
             type: question.type,
             selectedOptionId,
             selectedOptionText: selected?.option ?? null,
-            textAnswer: answer?.textAnswer ?? null,
+            textAnswer: answer?.textAnswer ?? graded?.textAnswer ?? null,
             isCorrect,
             correctOptionText: correct?.option ?? null,
             explanation: null as string | null,
+            awardedPoints:
+              graded?.awardedPoints != null
+                ? Number(graded.awardedPoints)
+                : null,
+            aiFeedback: graded?.aiFeedback ?? null,
+            gradingStatus: graded?.gradingStatus ?? null,
+            points: question.points,
           };
         })
       : null;
