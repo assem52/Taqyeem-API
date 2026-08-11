@@ -20,6 +20,11 @@ export class AttemptAdminController {
     private readonly integrityReviewService: IntegrityReviewService,
   ) {}
 
+  @Get('recent-submissions')
+  listRecentSubmissions() {
+    return this.integrityReviewService.listRecentSubmissions(30);
+  }
+
   @Get(':attemptId')
   getAttemptReview(@Param('attemptId') attemptId: string) {
     return this.integrityReviewService.getAttemptReview(attemptId);

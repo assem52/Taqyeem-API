@@ -31,13 +31,20 @@ export class EssayGradingService {
     }
 
     const max = Math.max(0, Number(input.maxPoints) || 0);
+    const softFloor = Math.round(max * 0.6 * 100) / 100;
+    const softCeil = Math.round(max * 0.8 * 100) / 100;
     const prompt = [
       'You are grading a short student essay for a quiz.',
       'Return ONLY valid JSON: {"awardedPoints": number, "feedback": "short rationale"}.',
       `Max points: ${max}`,
-      'Award a number from 0 to maxPoints (decimals allowed). Be fair and consistent.',
+      'Be generous and student-friendly. Prefer relevance to the question over strict rubric match.',
+      'Scoring guide:',
+      `- Off-topic / empty / nonsense: 0–${Math.round(max * 0.2 * 100) / 100}`,
+      `- Related to the question but incomplete or only partly matching the rubric: award about ${softFloor}–${softCeil} (roughly 60–80% of max).`,
+      `- Solid answer covering most of the rubric: 80–100% of max.`,
+      '- Do not fail answers that are on-topic just because wording differs from the rubric.',
       `Question: ${input.questionText}`,
-      `Rubric / grading guidance: ${input.rubric?.trim() || 'None provided — grade on relevance, clarity, and completeness.'}`,
+      `Rubric / grading guidance (use as soft guidance, not a hard checklist): ${input.rubric?.trim() || 'None provided — grade on relevance, clarity, and completeness.'}`,
       `Student answer: ${answer}`,
     ].join('\n');
 

@@ -32,6 +32,38 @@ export interface AttemptIntegrityRow {
 export class IntegrityReviewService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Latest submitted attempts across all quizzes (admin notification feed).
+   */
+  async listRecentSubmissions(limit = 25) {
+    const take = Math.min(50, Math.max(1, limit));
+    const attempts = await this.prisma.attempt.findMany({
+      where: {
+        status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] },
+        submittedAt: { not: null },
+      },
+      include: {
+        student: { select: { id: true, name: true, email: true } },
+        quiz: { select: { id: true, title: true } },
+      },
+      orderBy: { submittedAt: 'desc' },
+      take,
+    });
+
+    return attempts.map((attempt) => ({
+      attemptId: attempt.id,
+      studentId: attempt.student.id,
+      learnerName: attempt.student.name,
+      learnerEmail: attempt.student.email,
+      quizId: attempt.quiz.id,
+      quizTitle: attempt.quiz.title,
+      status: attempt.status,
+      score: attempt.score != null ? Number(attempt.score) : null,
+      submittedAt: attempt.submittedAt!.toISOString(),
+      attemptLink: `/admin/attempts/${attempt.id}`,
+    }));
+  }
+
   async listAttemptsForQuiz(quizId: string): Promise<AttemptIntegrityRow[]> {
     const quiz = await this.prisma.quiz.findUnique({ where: { id: quizId } });
     if (!quiz) {
