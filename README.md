@@ -71,9 +71,9 @@ Product UI screenshots live in the **frontend** repository under `docs/screensho
 
 ---
 
-## Technical maturity
+## Architecture
 
-This service is shaped for correctness under concurrency and cost-aware AI use—not a CRUD demo.
+Correctness under concurrency and cost-aware AI usage.
 
 ### Data integrity & scoring
 - **Start-time question snapshots** so later authoring edits cannot rewrite a live attempt.
