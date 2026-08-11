@@ -35,6 +35,12 @@ model Attempt {
 
   @@unique([quizId, studentId])
   @@index([status, startedAt])
+  /// Admin notification feed + analytics: submitted attempts ordered by time
+  @@index([status, submittedAt])
+  /// Deadline sweep / per-quiz attempt lists
+  @@index([quizId, status])
+  /// Learner dashboard: attempts by student
+  @@index([studentId])
 }
 
 model Enrollment {
@@ -44,6 +50,8 @@ model Enrollment {
   student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@unique([quizId, studentId])
+  /// Learner quiz list: enrollments looked up by student
+  @@index([studentId])
 }
 
 model Quiz {
@@ -63,6 +71,9 @@ model Quiz {
   invitations        Invitation[]
   attempts           Attempt[]
   integrityThreshold Int           @default(5) @map("integrity_threshold")
+
+  /// Admin cohort list filtered by status, newest first
+  @@index([status, createdAt])
 }
 
 model User {
@@ -82,6 +93,8 @@ model User {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
+  @@index([verificationToken])
+  @@index([passwordResetToken])
   @@map("users")
 }
 
@@ -225,6 +238,8 @@ model Answer {
 
   @@id([attemptId, questionId])
   @@index([attemptId])
+  /// Human review queues for essays pending grade
+  @@index([gradingStatus])
 }
 
 enum AnswerGradingStatus {
@@ -254,6 +269,8 @@ model Invitation {
   emailLogs EmailLog[]
 
   @@index([quizId, email])
+  /// Registration / invite acceptance: invitations by learner email
+  @@index([email])
 }
 
 model EmailLog {
