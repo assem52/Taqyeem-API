@@ -26,30 +26,30 @@ export class AiGenerateService {
   constructor(private readonly llmService: LlmService) {}
 
   async extractPdfText(buffer: Buffer): Promise<string> {
-    let parser: { getText: () => Promise<{ text?: string }>; destroy: () => Promise<void> } | null =
-      null;
     try {
+      // pdf-parse@1.x: (buffer) => Promise<{ text: string }>
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { PDFParse } = require('pdf-parse') as {
-        PDFParse: new (options: { data: Buffer }) => {
-          getText: () => Promise<{ text?: string }>;
-          destroy: () => Promise<void>;
-        };
-      };
-      parser = new PDFParse({ data: buffer });
-      const parsed = await parser.getText();
-      return (parsed.text || '').trim();
+      const pdfParse = require('pdf-parse') as (
+        data: Buffer,
+      ) => Promise<{ text?: string }>;
+      const parsed = await pdfParse(buffer);
+      const text = (parsed.text || '').replace(/\u0000/g, '').trim();
+      if (!text) {
+        throw new BadRequestException(
+          'That PDF has no extractable text (it may be image-only). Paste the text instead.',
+        );
+      }
+      return text;
     } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
       this.logger.error(
         `PDF parse failed: ${error instanceof Error ? error.message : error}`,
       );
       throw new BadRequestException(
         'Could not read text from that PDF. Try another file or paste the text instead.',
       );
-    } finally {
-      if (parser) {
-        await parser.destroy().catch(() => undefined);
-      }
     }
   }
 
