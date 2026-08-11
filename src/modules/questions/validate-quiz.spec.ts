@@ -168,7 +168,7 @@ describe('validateQuiz', () => {
     );
   });
 
-  it('rejects OPEN_ENDED for objective-only authoring', () => {
+  it('accepts OPEN_ENDED essay questions without options', () => {
     const result = validateQuestion({
       text: 'Explain',
       type: 'OPEN_ENDED',
@@ -176,8 +176,19 @@ describe('validateQuiz', () => {
       options: [],
     });
 
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects OPEN_ENDED with options', () => {
+    const result = validateQuestion({
+      text: 'Explain',
+      type: 'OPEN_ENDED',
+      isHidden: false,
+      options: [{ option: 'A', isCorrect: true }],
+    });
+
     expect(result.errors).toContain(
-      'Question uses OPEN_ENDED, which is not supported by objective-only scoring',
+      'Question essay questions must not have options',
     );
   });
 });

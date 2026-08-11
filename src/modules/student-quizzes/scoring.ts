@@ -13,12 +13,14 @@ export interface QuestionSnapshotItem {
   type: QuestionType;
   points: number;
   position?: number;
+  explanation?: string | null;
   options: OptionSnapshotItem[];
 }
 
 export interface StoredAnswer {
   selectedOptionId: string | null;
   textAnswer?: string | null;
+  awardedPoints?: number | null;
   answeredAt: string;
 }
 export type AttemptAnswers = Record<string, StoredAnswer | undefined>;
@@ -35,6 +37,8 @@ export interface ScoreResult {
 export interface ComputeScoreOptions {
   passScorePercentage?: number | null;
   submittedAt?: Date;
+  /** Per-question essay awards; falls back to answers[q].awardedPoints */
+  essayAwards?: Record<string, number | null | undefined>;
 }
 
 export function computeScore(
@@ -42,19 +46,37 @@ export function computeScore(
   answers: AttemptAnswers,
   opts: ComputeScoreOptions = {},
 ): ScoreResult {
-  const { passScorePercentage = null, submittedAt = new Date() } = opts;
+  const {
+    passScorePercentage = null,
+    submittedAt = new Date(),
+    essayAwards = {},
+  } = opts;
 
   let rawScore = 0;
   let maxScore = 0;
   let ungradedCount = 0;
 
   for (const q of questionSnapshot) {
+    maxScore += q.points;
+
     if (q.type === 'OPEN_ENDED') {
-      ungradedCount += 1;
+      const fromMap = essayAwards[q.questionId];
+      const fromAnswer = answers[q.questionId]?.awardedPoints;
+      const award =
+        fromMap !== undefined && fromMap !== null
+          ? Number(fromMap)
+          : fromAnswer !== undefined && fromAnswer !== null
+            ? Number(fromAnswer)
+            : null;
+
+      if (award == null || !Number.isFinite(award)) {
+        ungradedCount += 1;
+        continue;
+      }
+      rawScore += Math.min(q.points, Math.max(0, award));
       continue;
     }
 
-    maxScore += q.points;
     const selectedOptionId = answers[q.questionId]?.selectedOptionId ?? null;
     if (selectedOptionId != null) {
       const chosen = q.options.find((o) => o.id === selectedOptionId);

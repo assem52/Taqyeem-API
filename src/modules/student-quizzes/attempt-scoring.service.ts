@@ -20,6 +20,7 @@ import {
   QuestionSnapshotItem,
   ScoreResult,
 } from './scoring';
+import { EssayGradingService } from './essay-grading.service';
 import { deriveStudentState, resolveAccess } from './student-quiz-state';
 
 interface SubmitResult {
@@ -43,6 +44,7 @@ export class AttemptScoringService {
     private readonly prisma: PrismaService,
     private readonly events: ScoreEventsService,
     private readonly learnerMail: LearnerMailService,
+    private readonly essayGrading: EssayGradingService,
   ) {}
 
   async startAttempt(
@@ -115,6 +117,7 @@ export class AttemptScoringService {
         type: question.type,
         points: question.points.toNumber(),
         position: question.position,
+        explanation: question.explanation ?? null,
         options: question.options.map((option) => ({
           id: option.id,
           option: option.option,
@@ -155,11 +158,12 @@ export class AttemptScoringService {
   }
 
   async autoSubmitIfExpired(attemptId: string): Promise<ScoreResult | null> {
-    let result: SubmitResult | null;
+    let claimed = false;
     try {
-      result = await this.prisma.$transaction(
-        async (tx) => {
-          const claimed = await tx.$executeRaw`
+      claimed =
+        (await this.prisma.$transaction(
+          async (tx) => {
+            const n = await tx.$executeRaw`
             UPDATE "Attempt" a
             SET status = 'AUTO_SUBMITTED'::"AttemptStatus", "submitted_at" = (NOW() AT TIME ZONE 'UTC')
             FROM "Quiz" q
@@ -171,18 +175,10 @@ export class AttemptScoringService {
                 OR (a."started_at" + (q.duration * INTERVAL '1 minute')) <= (NOW() AT TIME ZONE 'UTC')
               )
           `;
-
-          if (claimed === 0) {
-            return null;
-          }
-          // Legacy/seed rows may lack a snapshot; still finalize so the cron
-          // cannot retry the same attempt forever after a rolled-back claim.
-          return this.scoreAndPersist(tx, attemptId, undefined, {
-            allowMissingSnapshot: true,
-          });
-        },
-        { timeout: 10_000, maxWait: 5_000 },
-      );
+            return n;
+          },
+          { timeout: 10_000, maxWait: 5_000 },
+        )) > 0;
     } catch (error) {
       if (this.isTransactionTimeout(error)) {
         throw new ServiceUnavailableException(
@@ -192,7 +188,12 @@ export class AttemptScoringService {
       throw error;
     }
 
-    if (!result) return null;
+    if (!claimed) return null;
+
+    // Score outside the claim TX so AI essay grading cannot blow the TX timeout.
+    const result = await this.scoreAndPersist(this.prisma, attemptId, undefined, {
+      allowMissingSnapshot: true,
+    });
 
     const payload = {
       attemptId,
@@ -314,11 +315,12 @@ export class AttemptScoringService {
     attemptId: string,
     studentId: string,
   ): Promise<ScoreResult> {
-    let result: SubmitResult;
+    let already: SubmitResult | null = null;
+    let claimed = false;
     try {
-      result = await this.prisma.$transaction(
+      await this.prisma.$transaction(
         async (tx) => {
-          const claimed = await tx.$executeRaw`
+          const n = await tx.$executeRaw`
             UPDATE "Attempt" a
             SET status = CASE
               WHEN q."close_at" <= (NOW() AT TIME ZONE 'UTC')
@@ -334,10 +336,11 @@ export class AttemptScoringService {
               AND a.status = 'IN_PROGRESS'::"AttemptStatus"
           `;
 
-          if (claimed === 0) {
-            return this.readAlreadySubmitted(tx, attemptId, studentId);
+          if (n === 0) {
+            already = await this.readAlreadySubmitted(tx, attemptId, studentId);
+            return;
           }
-          return this.scoreAndPersist(tx, attemptId, studentId);
+          claimed = true;
         },
         { timeout: 10_000, maxWait: 5_000 },
       );
@@ -349,6 +352,10 @@ export class AttemptScoringService {
       }
       throw error;
     }
+
+    const result = claimed
+      ? await this.scoreAndPersist(this.prisma, attemptId, studentId)
+      : already!;
 
     if (result.freshlyScored) {
       const payload = {
@@ -397,12 +404,12 @@ export class AttemptScoringService {
   }
 
   private async scoreAndPersist(
-    tx: Prisma.TransactionClient,
+    db: Prisma.TransactionClient | PrismaService,
     attemptId: string,
     studentId?: string,
     opts?: { allowMissingSnapshot?: boolean },
   ): Promise<SubmitResult> {
-    const attempt = await tx.attempt.findUnique({
+    const attempt = await db.attempt.findUnique({
       where: { id: attemptId },
       include: { quiz: true },
     });
@@ -429,12 +436,54 @@ export class AttemptScoringService {
     const passScorePercentage =
       attempt.quiz.passScore != null ? attempt.quiz.passScore.toNumber() : null;
 
+    const essayAwards: Record<string, number> = {};
+    for (const question of questionSnapshot) {
+      if (question.type !== 'OPEN_ENDED') continue;
+
+      const textAnswer = answers[question.questionId]?.textAnswer ?? null;
+      const grade = await this.essayGrading.grade({
+        questionText: question.text,
+        rubric: question.explanation ?? null,
+        maxPoints: question.points,
+        studentAnswer: textAnswer ?? '',
+      });
+
+      if (grade.awardedPoints != null) {
+        essayAwards[question.questionId] = grade.awardedPoints;
+      }
+
+      await db.answer.upsert({
+        where: {
+          attemptId_questionId: {
+            attemptId,
+            questionId: question.questionId,
+          },
+        },
+        create: {
+          attemptId,
+          questionId: question.questionId,
+          selectedOptionId: null,
+          textAnswer,
+          awardedPoints: grade.awardedPoints,
+          aiFeedback: grade.feedback,
+          gradingStatus: grade.gradingStatus,
+          answeredAt: new Date(),
+        },
+        update: {
+          awardedPoints: grade.awardedPoints,
+          aiFeedback: grade.feedback,
+          gradingStatus: grade.gradingStatus,
+        },
+      });
+    }
+
     const score = computeScore(questionSnapshot, answers, {
       passScorePercentage,
       submittedAt: attempt.submittedAt ?? new Date(),
+      essayAwards,
     });
 
-    await tx.attempt.update({
+    await db.attempt.update({
       where: { id: attemptId },
       data: {
         score: score.percentage,
@@ -450,6 +499,101 @@ export class AttemptScoringService {
     };
   }
 
+  /**
+   * Recompute attempt % from snapshot + objective answers + Answer essay awards.
+   * Used after human grade overrides.
+   */
+  async recomputeAttemptScore(attemptId: string): Promise<ScoreResult> {
+    const attempt = await this.prisma.attempt.findUnique({
+      where: { id: attemptId },
+      include: { quiz: true, answers: true },
+    });
+    if (!attempt) throw new NotFoundException('Attempt not found');
+    if (!attempt.questionSnapshot) {
+      throw new ConflictException('Attempt has no question snapshot.');
+    }
+
+    const questionSnapshot =
+      attempt.questionSnapshot as unknown as QuestionSnapshotItem[];
+    const answers = (attempt.attemptAnswers ?? {}) as unknown as AttemptAnswers;
+    const essayAwards: Record<string, number> = {};
+    for (const row of attempt.answers) {
+      if (row.awardedPoints != null) {
+        essayAwards[row.questionId] = Number(row.awardedPoints);
+      }
+    }
+
+    const passScorePercentage =
+      attempt.quiz.passScore != null ? attempt.quiz.passScore.toNumber() : null;
+    const score = computeScore(questionSnapshot, answers, {
+      passScorePercentage,
+      submittedAt: attempt.submittedAt ?? new Date(),
+      essayAwards,
+    });
+
+    await this.prisma.attempt.update({
+      where: { id: attemptId },
+      data: { score: score.percentage },
+    });
+
+    return score;
+  }
+
+  async overrideEssayGrade(
+    attemptId: string,
+    questionId: string,
+    awardedPoints: number,
+    feedback?: string,
+  ) {
+    const attempt = await this.prisma.attempt.findUnique({
+      where: { id: attemptId },
+    });
+    if (!attempt) throw new NotFoundException('Attempt not found');
+    if (attempt.status === 'IN_PROGRESS') {
+      throw new ConflictException('Cannot grade essays before submission.');
+    }
+    if (!attempt.questionSnapshot) {
+      throw new ConflictException('Attempt has no question snapshot.');
+    }
+
+    const snapshot =
+      attempt.questionSnapshot as unknown as QuestionSnapshotItem[];
+    const question = snapshot.find((row) => row.questionId === questionId);
+    if (!question || question.type !== 'OPEN_ENDED') {
+      throw new NotFoundException('Essay question not found on this attempt.');
+    }
+
+    const points = Math.min(
+      question.points,
+      Math.max(0, Math.round(Number(awardedPoints) * 100) / 100),
+    );
+
+    const answers = (attempt.attemptAnswers ?? {}) as unknown as AttemptAnswers;
+    const textAnswer = answers[questionId]?.textAnswer ?? null;
+
+    await this.prisma.answer.upsert({
+      where: { attemptId_questionId: { attemptId, questionId } },
+      create: {
+        attemptId,
+        questionId,
+        selectedOptionId: null,
+        textAnswer,
+        awardedPoints: points,
+        aiFeedback: feedback?.trim() || 'Human reviewed.',
+        gradingStatus: 'HUMAN_REVIEWED',
+        answeredAt: new Date(),
+      },
+      update: {
+        awardedPoints: points,
+        aiFeedback: feedback?.trim() || undefined,
+        gradingStatus: 'HUMAN_REVIEWED',
+      },
+    });
+
+    const score = await this.recomputeAttemptScore(attemptId);
+    return { awardedPoints: points, score };
+  }
+
   private async readAlreadySubmitted(
     tx: Prisma.TransactionClient,
     attemptId: string,
@@ -457,7 +601,7 @@ export class AttemptScoringService {
   ): Promise<SubmitResult> {
     const existing = await tx.attempt.findUnique({
       where: { id: attemptId },
-      include: { quiz: true },
+      include: { quiz: true, answers: true },
     });
     if (!existing) throw new NotFoundException('Attempt not found');
     if (existing.studentId !== studentId)
@@ -478,9 +622,17 @@ export class AttemptScoringService {
         ? existing.quiz.passScore.toNumber()
         : null;
 
+    const essayAwards: Record<string, number> = {};
+    for (const row of existing.answers) {
+      if (row.awardedPoints != null) {
+        essayAwards[row.questionId] = Number(row.awardedPoints);
+      }
+    }
+
     const score = computeScore(questionSnapshot, answers, {
       passScorePercentage,
       submittedAt: existing.submittedAt ?? new Date(),
+      essayAwards,
     });
 
     return {

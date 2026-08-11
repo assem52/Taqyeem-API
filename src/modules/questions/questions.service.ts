@@ -30,7 +30,7 @@ export class QuestionsService {
       text: dto.text,
       type: dto.type,
       isHidden: false,
-      options: dto.options,
+      options: dto.options ?? [],
     });
 
     if (!validationResult.valid) {
@@ -50,7 +50,7 @@ export class QuestionsService {
         points: dto.points ?? 1,
         position: (last?.position ?? -1) + 1,
         options: {
-          create: dto.options.map((opt, position) => ({
+          create: (dto.options ?? []).map((opt, position) => ({
             option: opt.option.trim(),
             isCorrect: opt.isCorrect,
             position,

@@ -32,6 +32,38 @@ export interface AttemptIntegrityRow {
 export class IntegrityReviewService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Latest submitted attempts across all quizzes (admin notification feed).
+   */
+  async listRecentSubmissions(limit = 25) {
+    const take = Math.min(50, Math.max(1, limit));
+    const attempts = await this.prisma.attempt.findMany({
+      where: {
+        status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] },
+        submittedAt: { not: null },
+      },
+      include: {
+        student: { select: { id: true, name: true, email: true } },
+        quiz: { select: { id: true, title: true } },
+      },
+      orderBy: { submittedAt: 'desc' },
+      take,
+    });
+
+    return attempts.map((attempt) => ({
+      attemptId: attempt.id,
+      studentId: attempt.student.id,
+      learnerName: attempt.student.name,
+      learnerEmail: attempt.student.email,
+      quizId: attempt.quiz.id,
+      quizTitle: attempt.quiz.title,
+      status: attempt.status,
+      score: attempt.score != null ? Number(attempt.score) : null,
+      submittedAt: attempt.submittedAt!.toISOString(),
+      attemptLink: `/admin/attempts/${attempt.id}`,
+    }));
+  }
+
   async listAttemptsForQuiz(quizId: string): Promise<AttemptIntegrityRow[]> {
     const quiz = await this.prisma.quiz.findUnique({ where: { id: quizId } });
     if (!quiz) {
@@ -77,6 +109,7 @@ export class IntegrityReviewService {
         student: true,
         quiz: true,
         integrityEvents: { orderBy: { occurredAt: 'asc' } },
+        answers: true,
       },
     });
 
@@ -91,11 +124,22 @@ export class IntegrityReviewService {
     const snapshot =
       attempt.questionSnapshot as unknown as QuestionSnapshotItem[];
     const answers = (attempt.attemptAnswers ?? {}) as unknown as AttemptAnswers;
+    const essayAwards: Record<string, number> = {};
+    const gradeByQuestion = new Map(
+      attempt.answers.map((row) => [row.questionId, row]),
+    );
+    for (const row of attempt.answers) {
+      if (row.awardedPoints != null) {
+        essayAwards[row.questionId] = Number(row.awardedPoints);
+      }
+    }
+
     const passScore =
       attempt.quiz.passScore != null ? Number(attempt.quiz.passScore) : null;
     const scoreDetail = computeScore(snapshot, answers, {
       passScorePercentage: passScore,
       submittedAt: attempt.submittedAt ?? new Date(),
+      essayAwards,
     });
 
     const eventCount = attempt.integrityEvents.length;
@@ -138,19 +182,29 @@ export class IntegrityReviewService {
       },
       questions: snapshot.map((question) => {
         const answer = answers[question.questionId];
+        const graded = gradeByQuestion.get(question.questionId);
         const selectedOptionId = answer?.selectedOptionId ?? null;
         const selected = question.options.find((o) => o.id === selectedOptionId);
         const correct = question.options.find((o) => o.isCorrect);
+        const awardedPoints =
+          graded?.awardedPoints != null ? Number(graded.awardedPoints) : null;
         return {
           questionId: question.questionId,
           text: question.text,
           type: question.type,
+          points: question.points,
           selectedOptionId,
           selectedOptionText: selected?.option ?? null,
-          textAnswer: answer?.textAnswer ?? null,
+          textAnswer: answer?.textAnswer ?? graded?.textAnswer ?? null,
           correctOptionText: correct?.option ?? null,
           isCorrect:
-            question.type === 'OPEN_ENDED' ? null : Boolean(selected?.isCorrect),
+            question.type === 'OPEN_ENDED'
+              ? null
+              : Boolean(selected?.isCorrect),
+          awardedPoints,
+          aiFeedback: graded?.aiFeedback ?? null,
+          gradingStatus: graded?.gradingStatus ?? null,
+          explanation: question.explanation ?? null,
         };
       }),
     };

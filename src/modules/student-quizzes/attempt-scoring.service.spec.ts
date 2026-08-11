@@ -46,7 +46,7 @@ describe('AttemptScoringService.startAttempt', () => {
       status: 'IN_PROGRESS',
     });
 
-    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any, { grade: async () => ({ awardedPoints: 0, feedback: 'mock', gradingStatus: 'AI_GRADED' }) } as any);
     const result = await service.startAttempt('s1', 'q1');
 
     expect(result).toEqual({ attemptId: 'new-attempt', status: 'IN_PROGRESS' });
@@ -86,7 +86,7 @@ describe('AttemptScoringService.startAttempt', () => {
       status: 'IN_PROGRESS',
     });
 
-    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any, { grade: async () => ({ awardedPoints: 0, feedback: 'mock', gradingStatus: 'AI_GRADED' }) } as any);
     await service.startAttempt('s1', 'q1');
 
     expect(prisma.attempt.create).toHaveBeenCalledWith({
@@ -120,7 +120,7 @@ describe('AttemptScoringService.startAttempt', () => {
       status: 'IN_PROGRESS',
     });
 
-    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any, { grade: async () => ({ awardedPoints: 0, feedback: 'mock', gradingStatus: 'AI_GRADED' }) } as any);
     const result = await service.startAttempt('s1', 'q1');
 
     expect(result).toEqual({
@@ -143,7 +143,7 @@ describe('AttemptScoringService.startAttempt', () => {
       status: 'SUBMITTED',
     });
 
-    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any, { grade: async () => ({ awardedPoints: 0, feedback: 'mock', gradingStatus: 'AI_GRADED' }) } as any);
     await expect(service.startAttempt('s1', 'q1')).rejects.toBeInstanceOf(
       ConflictException,
     );
@@ -156,7 +156,7 @@ describe('AttemptScoringService.startAttempt', () => {
     prisma.quiz.findUnique.mockResolvedValue(OPEN_QUIZ);
     prisma.enrollment.findUnique.mockResolvedValue(null);
 
-    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any, { grade: async () => ({ awardedPoints: 0, feedback: 'mock', gradingStatus: 'AI_GRADED' }) } as any);
     await expect(service.startAttempt('s1', 'q1')).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -175,7 +175,7 @@ describe('AttemptScoringService.startAttempt', () => {
     });
     prisma.attempt.findUnique.mockResolvedValue(null);
 
-    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any, { grade: async () => ({ awardedPoints: 0, feedback: 'mock', gradingStatus: 'AI_GRADED' }) } as any);
     await expect(service.startAttempt('s1', 'q1')).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -195,7 +195,7 @@ describe('AttemptScoringService.startAttempt', () => {
     });
     prisma.attempt.findUnique.mockResolvedValue(null);
 
-    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any, { grade: async () => ({ awardedPoints: 0, feedback: 'mock', gradingStatus: 'AI_GRADED' }) } as any);
     await expect(service.startAttempt('s1', 'q1')).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -206,7 +206,7 @@ describe('AttemptScoringService.startAttempt', () => {
     prisma.student.findUnique.mockResolvedValue(VERIFIED_STUDENT);
     prisma.quiz.findUnique.mockResolvedValue(null);
 
-    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any, { grade: async () => ({ awardedPoints: 0, feedback: 'mock', gradingStatus: 'AI_GRADED' }) } as any);
     await expect(service.startAttempt('s1', 'q1')).rejects.toBeInstanceOf(
       NotFoundException,
     );
@@ -231,7 +231,7 @@ describe('AttemptScoringService.startAttempt', () => {
     );
     prisma.attempt.create.mockRejectedValue(uniqueConstraintError);
 
-    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any);
+    const service = new AttemptScoringService(prisma as any, eventsMock, { sendQuizCompleted: jest.fn() } as any, { grade: async () => ({ awardedPoints: 0, feedback: 'mock', gradingStatus: 'AI_GRADED' }) } as any);
     const result = await service.startAttempt('s1', 'q1');
 
     expect(result).toEqual({
@@ -260,7 +260,7 @@ describe('AttemptScoringService.submitAttempt', () => {
 
     prisma.attempt.update.mockResolvedValue({});
 
-    const service = new AttemptScoringService(prisma as any, eventsMock as any, { sendQuizCompleted: jest.fn() } as any);
+    const service = new AttemptScoringService(prisma as any, eventsMock as any, { sendQuizCompleted: jest.fn() } as any, { grade: async () => ({ awardedPoints: 0, feedback: 'mock', gradingStatus: 'AI_GRADED' }) } as any);
     await service.submitAttempt('attempt-1', 's1');
 
     const [sqlParts] = prisma.$executeRaw.mock.calls[0];
@@ -284,7 +284,7 @@ describe('AttemptScoringService.saveAnswer deadline', () => {
     prisma.$executeRaw.mockResolvedValue(0);
     prisma.attempt.findUnique.mockResolvedValue(null);
 
-    const service = new AttemptScoringService(prisma as any, eventsMock as any, { sendQuizCompleted: jest.fn() } as any);
+    const service = new AttemptScoringService(prisma as any, eventsMock as any, { sendQuizCompleted: jest.fn() } as any, { grade: async () => ({ awardedPoints: 0, feedback: 'mock', gradingStatus: 'AI_GRADED' }) } as any);
 
     await expect(
       service.saveAnswer('attempt-1', 's1', 'question-1', 'option-1'),
@@ -315,7 +315,7 @@ describe('AttemptScoringService.saveAnswer deadline', () => {
       },
     });
 
-    const service = new AttemptScoringService(prisma as any, eventsMock as any, { sendQuizCompleted: jest.fn() } as any);
+    const service = new AttemptScoringService(prisma as any, eventsMock as any, { sendQuizCompleted: jest.fn() } as any, { grade: async () => ({ awardedPoints: 0, feedback: 'mock', gradingStatus: 'AI_GRADED' }) } as any);
 
     const autoSubmitSpy = jest
       .spyOn(service, 'autoSubmitIfExpired')
