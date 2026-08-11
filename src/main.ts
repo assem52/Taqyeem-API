@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import {
   assertNoMockAuthInProduction,
@@ -18,7 +19,15 @@ async function bootstrap() {
     configService.get('MOCK_STUDENT_ID'),
   );
 
-  app.use(helmet());
+  // Swagger UI needs relaxed CSP in non-production.
+  const nodeEnv = configService.get<string>('NODE_ENV') || 'development';
+  app.use(
+    helmet(
+      nodeEnv === 'production'
+        ? undefined
+        : { contentSecurityPolicy: false },
+    ),
+  );
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -32,8 +41,20 @@ async function bootstrap() {
     credentials: true,
   });
 
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('Taqyem API')
+    .setDescription(
+      'Assessment platform API — auth, quizzes, attempts, integrity, AI authoring, and RAG ask. Prefer JWT Bearer auth. See docs/AI_QUESTION_GENERATION.md for generation constraints.',
+    )
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api', app, document);
+
   const port = configService.get('PORT', 3000);
   await app.listen(port);
   logger.log(`Taqyem API listening on port ${port}`);
+  logger.log(`OpenAPI UI: http://localhost:${port}/api`);
 }
 bootstrap();

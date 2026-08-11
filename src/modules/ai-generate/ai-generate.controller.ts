@@ -10,6 +10,13 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
 import { AdminGuard } from '../admin-quizzes/guards/admin.guard';
 import { AiGenerateService } from './ai-generate.service';
@@ -50,6 +57,8 @@ function isPdf(file: UploadMeta): boolean {
   return file.mimetype === 'application/pdf' || name.endsWith('.pdf');
 }
 
+@ApiTags('AI')
+@ApiBearerAuth()
 @Controller('admin/ai')
 @UseGuards(AdminGuard)
 export class AiGenerateController {
@@ -57,6 +66,27 @@ export class AiGenerateController {
 
   @Post('generate-questions')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Generate draft questions from topic, text, and/or PDF/image',
+    description:
+      'Admin-only. Max 15 questions; uploads ≤ 8 MB (PDF or common images). Drafts are not persisted until the client saves them. See docs/AI_QUESTION_GENERATION.md.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        topic: { type: 'string', maxLength: 500 },
+        content: { type: 'string', maxLength: 50000 },
+        count: { type: 'integer', minimum: 1, maximum: 15, default: 5 },
+        typePreference: {
+          type: 'string',
+          enum: ['MCQ', 'TRUE_FALSE', 'OPEN_ENDED', 'MIXED'],
+        },
+        source: { type: 'string', format: 'binary' },
+      },
+    },
+  })
   @UseInterceptors(
     FileInterceptor('source', {
       storage: memoryStorage(),

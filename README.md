@@ -39,15 +39,20 @@ Clients (Web) ──JWT──► NestJS API ──Prisma──► PostgreSQL (+ 
 
 ## Screenshots
 
-> Replace the markers below with product screenshots when available.
+Product UI screenshots live in the **frontend** repository under `docs/screenshots/` (landing, admin quizzes, AI generate, attempt review, learner flows).
 
-| | |
+---
+
+## Documentation
+
+| Doc | Purpose |
 | :--- | :--- |
-| **Admin — quiz list** | `<!-- SCREENSHOT: admin-quizzes-list -->` |
-| **Admin — launch wizard** | `<!-- SCREENSHOT: admin-launch-wizard -->` |
-| **Admin — attempt review (essay grade)** | `<!-- SCREENSHOT: admin-attempt-review-essay -->` |
-| **Admin — notifications feed** | `<!-- SCREENSHOT: admin-notifications -->` |
-| **Learner — attempt** | `<!-- SCREENSHOT: learner-attempt -->` |
+| [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) | Internship handoff narrative |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System diagram & modules |
+| [docs/AI_QUESTION_GENERATION.md](docs/AI_QUESTION_GENERATION.md) | AI authoring behavior & limits |
+| [docs/DELIVERY_CHECKLIST.md](docs/DELIVERY_CHECKLIST.md) | Freeze / release checklist |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Branch & PR workflow |
+| OpenAPI UI | `http://localhost:3000/api` after `start:dev` |
 
 ---
 
@@ -135,7 +140,8 @@ npx prisma db seed
 npm run start:dev
 ```
 
-API default: `http://localhost:3000`
+API default: `http://localhost:3000`  
+Interactive API docs: `http://localhost:3000/api`
 
 ### Demo accounts (seed)
 
@@ -194,7 +200,7 @@ Generate secrets with `openssl rand -hex 32`.
 | AI | `POST /chat`, `POST /ask`, `POST /admin/ai/generate-questions` |
 | Follow-up | `GET /admin/follow-up` |
 
-Contract details live under `docs/` and `CONTRACT.md`.
+Contract details live under `docs/` and `CONTRACT.md`. Prefer **Swagger** at `/api` for interactive exploration; keep scoring/integrity contracts in Markdown for behavior that OpenAPI cannot express.
 
 ---
 
@@ -241,3 +247,4 @@ prisma/                 Schema, migrations, seed
 
 - Frontend app: sibling `frontend/` repository (Vite + React).
 - Product contracts: `CONTRACT.md`, `docs/ATTEMPTS_SCORING_INTEGRITY_CONTRACT.md`.
+- Handoff: `docs/PROJECT_OVERVIEW.md`, `docs/DELIVERY_CHECKLIST.md`.
