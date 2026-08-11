@@ -30,7 +30,10 @@ describe('IntegrityCaptureService', () => {
         status: 'IN_PROGRESS',
       });
 
-      const result = await service.recordVisibilityLost('victim-attempt', 'attacker-claims-this-id');
+      const result = await service.recordVisibilityLost(
+        'victim-attempt',
+        'attacker-claims-this-id',
+      );
 
       expect(result).toBe('forbidden');
       expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
@@ -43,7 +46,10 @@ describe('IntegrityCaptureService', () => {
         status: 'SUBMITTED',
       });
 
-      const result = await service.recordVisibilityLost('attempt-1', 'student-1');
+      const result = await service.recordVisibilityLost(
+        'attempt-1',
+        'student-1',
+      );
 
       expect(result).toBe('ignored');
       expect(mockPrismaService.$executeRaw).not.toHaveBeenCalled();
@@ -51,7 +57,12 @@ describe('IntegrityCaptureService', () => {
 
     it('returns "ignored" for a nonexistent attempt', async () => {
       mockPrismaService.attempt.findUnique.mockResolvedValue(null);
-      const result = await service.recordVisibilityLost('does-not-exist', 'student-1');
+
+      const result = await service.recordVisibilityLost(
+        'does-not-exist',
+        'student-1',
+      );
+
       expect(result).toBe('ignored');
     });
 
@@ -61,15 +72,22 @@ describe('IntegrityCaptureService', () => {
         studentId: 'student-1',
         status: 'IN_PROGRESS',
       });
+
       mockPrismaService.$executeRaw.mockResolvedValue(1);
 
-      const result = await service.recordVisibilityLost('attempt-1', 'student-1');
+      const result = await service.recordVisibilityLost(
+        'attempt-1',
+        'student-1',
+      );
 
       expect(result).toBe('accepted');
       expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
 
       const [sqlParts] = mockPrismaService.$executeRaw.mock.calls[0];
-      const sql = Array.isArray(sqlParts) ? sqlParts.join('') : String(sqlParts);
+      const sql = Array.isArray(sqlParts)
+        ? sqlParts.join('')
+        : String(sqlParts);
+
       expect(sql).toContain('IN_PROGRESS');
       expect(sql).toContain('"studentId" =');
       expect(sql).toContain('NOT EXISTS');
@@ -82,13 +100,18 @@ describe('IntegrityCaptureService', () => {
         studentId: 'student-1',
         status: 'IN_PROGRESS',
       });
+
       const warnSpy = jest
         .spyOn(service['logger'], 'warn')
         .mockImplementation(() => undefined);
+
       const dbError = new Error('Database error during raw execute');
       mockPrismaService.$executeRaw.mockRejectedValue(dbError);
 
-      const result = await service.recordVisibilityLost('attempt-1', 'student-1');
+      const result = await service.recordVisibilityLost(
+        'attempt-1',
+        'student-1',
+      );
 
       expect(result).toBe('accepted');
       expect(warnSpy).toHaveBeenCalledTimes(1);
@@ -96,6 +119,50 @@ describe('IntegrityCaptureService', () => {
         expect.stringContaining('attempt-1'),
         dbError.stack,
       );
+    });
+  });
+
+  describe('additional integrity events', () => {
+    it('records COPY for an active owned attempt', async () => {
+      mockPrismaService.attempt.findUnique.mockResolvedValue({
+        id: 'attempt-1',
+        studentId: 'student-1',
+        status: 'IN_PROGRESS',
+      });
+
+      mockPrismaService.$executeRaw.mockResolvedValue(1);
+
+      const result = await service.recordCopy(
+        'attempt-1',
+        'student-1',
+      );
+
+      expect(result).toBe('accepted');
+      expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
+
+      const callArgs = mockPrismaService.$executeRaw.mock.calls[0];
+      expect(callArgs).toContain('COPY');
+    });
+
+    it('records SCREENSHOT for an active owned attempt', async () => {
+      mockPrismaService.attempt.findUnique.mockResolvedValue({
+        id: 'attempt-1',
+        studentId: 'student-1',
+        status: 'IN_PROGRESS',
+      });
+
+      mockPrismaService.$executeRaw.mockResolvedValue(1);
+
+      const result = await service.recordScreenshot(
+        'attempt-1',
+        'student-1',
+      );
+
+      expect(result).toBe('accepted');
+      expect(mockPrismaService.$executeRaw).toHaveBeenCalledTimes(1);
+
+      const callArgs = mockPrismaService.$executeRaw.mock.calls[0];
+      expect(callArgs).toContain('SCREENSHOT');
     });
   });
 });
