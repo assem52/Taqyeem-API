@@ -1,168 +1,243 @@
-# QnA Service — Backend
+# Taqyem API
 
-NestJS + PostgreSQL + Prisma API for Sprint 1 (RAG/knowledge base + **Student Quiz Access**).
+Backend service for **Taqyem** — an assessment platform for cohort quizzes, integrity-aware attempts, AI-assisted authoring, and post-submit essay evaluation.
+
+Built with **NestJS**, **PostgreSQL** (+ **pgvector**), and **Prisma**. Designed for multi-role access (admin / learner), durable attempt scoring, and controlled third-party AI usage.
+
+---
+
+## Product surface
+
+| Domain | Capabilities |
+| :--- | :--- |
+| **Assessments** | Draft → publish lifecycle, timed windows, pass marks, results policies |
+| **Authoring** | Quiz questions, global bank, AI draft generation (topic / text / PDF / OCR) |
+| **Delivery** | Invitations, enrollment, single-attempt start, debounced answer persistence |
+| **Integrity** | Visibility-loss capture, threshold flagging, attempt review |
+| **Scoring** | Objective auto-score; essay (`OPEN_ENDED`) AI grade + human override |
+| **Knowledge** | Document ingest, chunk embeddings, retrieval-augmented admin ask |
+| **Ops** | Seeded demos, scheduled deadline sweeps, mail transport (live or simulated) |
+
+---
+
+## Architecture at a glance
+
+```
+Clients (Web) ──JWT──► NestJS API ──Prisma──► PostgreSQL (+ pgvector)
+                              │
+                              ├── Groq   (chat, generate, essay grade, RAG answer)
+                              ├── OpenAI (embeddings for ingest / search)
+                              └── SMTP   (optional transactional mail)
+```
+
+- **Auth:** JWT access tokens; production disables header-based mock identity.
+- **Attempts:** Atomic claim on submit; question snapshot frozen at start; answers dual-written (JSONB + `Answer` rows).
+- **AI boundary:** LLM calls are isolated behind a shared client; graded attempts never expose the in-quiz chat surface.
+- **Scheduling:** Deadline auto-submit can be pinned to a single replica via `CRON_ENABLED`.
+
+---
+
+## Screenshots
+
+> Replace the markers below with product screenshots when available.
+
+| | |
+| :--- | :--- |
+| **Admin — quiz list** | `<!-- SCREENSHOT: admin-quizzes-list -->` |
+| **Admin — launch wizard** | `<!-- SCREENSHOT: admin-launch-wizard -->` |
+| **Admin — attempt review (essay grade)** | `<!-- SCREENSHOT: admin-attempt-review-essay -->` |
+| **Admin — notifications feed** | `<!-- SCREENSHOT: admin-notifications -->` |
+| **Learner — attempt** | `<!-- SCREENSHOT: learner-attempt -->` |
+
+---
+
+## Stack
+
+| Layer | Choice |
+| :--- | :--- |
+| Runtime | Node.js 20+, NestJS 10 |
+| Language | TypeScript |
+| Data | PostgreSQL, Prisma Migrate |
+| Search / RAG | pgvector, OpenAI embeddings |
+| Generation | Groq (OpenAI-compatible) |
+| Security | Helmet, class-validator, JWT, bcrypt, throttling |
+| Jobs | `@nestjs/schedule` (attempt deadline sweeps) |
+| Docs / contracts | `CONTRACT.md`, `docs/` |
+
+---
+
+## Technical maturity
+
+This service is shaped for correctness under concurrency and cost-aware AI use—not a CRUD demo.
+
+### Data integrity & scoring
+- **Start-time question snapshots** so later authoring edits cannot rewrite a live attempt.
+- **Atomic submit claims** (`UPDATE … WHERE status = IN_PROGRESS`) to prevent double-score races.
+- **Objective + essay composite scoring** with persisted AI awards and admin override recomputation.
+- **Results policies** (`IMMEDIATE` / `AFTER_CLOSE` / `ADMIN_ONLY`) gate learner review unlock.
+
+### Security & access control
+- Role-separated guards (admin vs learner JWT).
+- Production hard-stops for mock `x-student-id` / `x-admin-token` shortcuts.
+- Input validation via DTOs; security headers via Helmet; rate limiting via Throttler.
+- Password hashing with bcrypt; time-bound email verification and reset tokens.
+
+### AI & content pipeline
+- Shared LLM client (Groq) for chat, draft generation, RAG answers, and essay grading.
+- PDF text extraction and image OCR before generation (reduces token spend vs multimodal uploads).
+- Essay grading uses rubric text as *soft* guidance (generous on-topic partial credit).
+- RAG path: ingest → chunk → embed → vector retrieve → generate (admin ask).
+
+### Operational readiness
+- Prisma migrations as the schema source of truth.
+- Seedable demo identities for local/staging.
+- Optional SMTP with simulated delivery for demos without mail infrastructure.
+- Multi-instance awareness for cron (single-writer sweeps).
+- HTTP collection (`api-tests.http`) and Jest coverage on scoring / validation paths.
+
+### Essential database indexes
+
+Indexes are limited to high-traffic access paths—not blanket coverage.
+
+| Relation | Index | Serves |
+| :--- | :--- | :--- |
+| `Attempt` | `(status, submittedAt)` | Admin recent-submissions feed |
+| `Attempt` | `(quizId, status)` | Per-quiz lists, deadline sweeps |
+| `Attempt` | `(studentId)` | Learner attempt hydration |
+| `Attempt` | `(status, startedAt)` | In-progress / time-based scans |
+| `Enrollment` | `(studentId)` | Learner quiz catalog |
+| `Quiz` | `(status, createdAt)` | Admin list + status filters |
+| `Question` | `(quizId, deletedAt, position)` | Active question ordering |
+| `Answer` | `(gradingStatus)` | Ungraded essay review queues |
+| `Invitation` | `(email)`, `(quizId, email)` | Invite accept + per-quiz lookups |
+| `User` | `(verificationToken)`, `(passwordResetToken)` | Auth token resolution |
+| Bank / RAG | category + document/chunk indexes | Authoring & retrieval |
+
+Migration: `prisma/migrations/*_essential_query_indexes`.
 
 ---
 
 ## Prerequisites
 
-- Node.js 20+
-- PostgreSQL running locally
-- A database created (e.g. `qna`)
-
-```bash
-createdb qna   # if it does not exist yet
-```
+- Node.js **20+**
+- PostgreSQL **14+** with **`vector`** extension (local, Docker, Neon, or Supabase)
+- OpenAI key (embeddings) and Groq key (generation) for full AI features
 
 ---
 
-## Initial setup
+## Quick start
 
 ```bash
 npm install
-cp .env.example .env   # then edit values (see Environment below)
-npx prisma migrate deploy   # apply committed migrations
-npx prisma db seed          # demo users + quizzes
+cp .env.example .env          # fill secrets — see Environment
+npx prisma migrate deploy
+npx prisma db seed
 npm run start:dev
 ```
 
-App runs at **http://localhost:3000** (override with `PORT` in `.env`).
+API default: `http://localhost:3000`
 
----
-
-## Demo accounts (from seed)
-
-After `npx prisma db seed`, log in via the frontend (`/login`) or `POST /auth/login`:
+### Demo accounts (seed)
 
 | Role | Email | Password |
 | :--- | :--- | :--- |
-| Student | `assem.test@example.com` | `Student123!` |
+| Learner | `assem.test@example.com` | `Student123!` |
 | Admin | `admin@example.com` | `Admin123!` |
 
-- Student is linked to seed UUID `11111111-1111-1111-1111-111111111111` and is enrolled in the demo quizzes.
-- Prefer JWT login. Mock headers (`x-student-id` / `x-admin-token`) still work as a DEV fallback (dual-mode).
-
 ---
 
-## Environment (`.env`)
+## Environment
 
-**Do not commit real `.env` files.** Share only `.env.example` in git. Teammates copy it and fill secrets locally (or receive secrets in a private channel — Discord DM / password manager — never in a PR).
+Copy `.env.example` → `.env`. **Never commit secrets.**
 
-```bash
-cp .env.example .env
-# then set JWT_SECRET and ADMIN_API_TOKEN, e.g.:
-# openssl rand -hex 32
-```
-
-| Variable | Required | Description |
+| Variable | Required | Purpose |
 | :--- | :--- | :--- |
-| `DATABASE_URL` | Yes | PostgreSQL connection string, e.g. `postgresql://USER@localhost:5432/qna?schema=public` |
-| `JWT_SECRET` | Yes | Signs access tokens — backend refuses to start if missing |
-| `ADMIN_API_TOKEN` | Recommended | Dual-mode admin header fallback; match frontend `VITE_ADMIN_TOKEN` |
-| `MOCK_STUDENT_ID` | Optional | Dual-mode student header fallback (seed UUID below) |
-| `PORT` | No | HTTP port (default `3000`) |
-| `OPENAI_API_KEY` | For RAG search | Needed for ingestion/search embeddings |
-| `GROQ_API_KEY` | For chat / AI generate / ask | Needed for `POST /chat`, `POST /ask`, `POST /admin/ai/generate-questions` |
-| `GROQ_MODEL` | No | Defaults to `llama-3.3-70b-versatile` |
+| `DATABASE_URL` | Yes | PostgreSQL connection (pgvector-capable) |
+| `JWT_SECRET` | Yes | Access-token signing |
+| `FRONTEND_URL` | Prod | CORS + invite / verify link base |
+| `GROQ_API_KEY` | AI features | Chat, generate, essay grade, ask |
+| `GROQ_MODEL` | No | Default `llama-3.3-70b-versatile` |
+| `OPENAI_API_KEY` | RAG | Embedding ingest / search |
+| `ADMIN_API_TOKEN` | Dev only | Header fallback (disabled in production) |
+| `EMAIL_DELIVERY_ENABLED` | No | `1` = SMTP send; `0` = simulate |
+| `SMTP_*` | Mail | Host/user/from when live mail is on |
+| `CRON_ENABLED` | Multi-instance | `false` on non-leader replicas |
+| `PORT` | No | Default `3000` |
 
-**Seed student UUID** (fixed in `prisma/seed.ts`):
-
-```
-MOCK_STUDENT_ID=11111111-1111-1111-1111-111111111111
-```
+Generate secrets with `openssl rand -hex 32`.
 
 ---
 
-## Database & Prisma
+## Common commands
 
 | Command | Purpose |
 | :--- | :--- |
-| `npm run migrate:dev` | Apply migrations in dev; creates migration SQL under `prisma/migrations/` |
-| `npm run migrate:deploy` | Apply migrations in CI/production |
-| `npm run generate` | Regenerate Prisma Client after schema changes |
-| `npx prisma db seed` | Load demo data (see seed section) |
-| `npm run studio` | Open Prisma Studio GUI |
-
-After editing `prisma/schema.prisma`:
-
-```bash
-npm run migrate:dev -- --name describe_your_change
-npm run generate
-```
+| `npm run start:dev` | Watch mode |
+| `npm run build` / `start:prod` | Production build & run |
+| `npm run migrate:dev` | Create/apply migrations (dev) |
+| `npm run migrate:deploy` | Apply migrations (CI/prod) |
+| `npx prisma db seed` | Demo data |
+| `npm test` | Unit / integration suite |
+| `npm run bootstrap:admin` | Ensure an admin user exists |
+| `npm run backup` / `restore` | DB backup helpers |
 
 ---
 
-## Seed data (`prisma/seed.ts`)
+## API map (selected)
 
-Registered in `package.json`:
-
-```json
-"prisma": { "seed": "ts-node prisma/seed.ts" }
-```
-
-Run with:
-
-```bash
-npx prisma db seed
-```
-
-**What it creates:**
-
-- 1 verified student (`11111111-1111-1111-1111-111111111111`) + linked login `assem.test@example.com` / `Student123!`
-- 1 admin login `admin@example.com` / `Admin123!` (no student profile)
-- Demo quizzes enrolled to that student (published + draft samples, follow-up fixtures, etc.)
-
-Re-running seed **clears** users/students/quizzes/attempts (and related rows) and recreates them.
-
----
-
-## Auth API (preferred)
-
-```bash
-# login
-curl -s -X POST http://localhost:3000/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"assem.test@example.com","password":"Student123!"}'
-
-# use the access_token
-curl http://localhost:3000/student/quizzes \
-  -H "Authorization: Bearer <access_token>"
-
-curl http://localhost:3000/admin/quizzes \
-  -H "Authorization: Bearer <admin_access_token>"
-
-curl http://localhost:3000/auth/me \
-  -H "Authorization: Bearer <access_token>"
-```
-
-### Dual-mode fallbacks (DEV)
-
-```bash
-# student mock
-curl -H "x-student-id: 11111111-1111-1111-1111-111111111111" \
-  http://localhost:3000/student/quizzes
-
-# admin shared secret
-curl -H "x-admin-token: $ADMIN_API_TOKEN" \
-  http://localhost:3000/admin/quizzes
-```
-
-Code: `src/auth/`, `src/modules/student-quizzes/`, admin guards under `src/modules/admin-quizzes/guards/`
-
----
-
-## Scripts
-
-| Script | Description |
+| Area | Examples |
 | :--- | :--- |
-| `npm run start:dev` | Dev server with watch |
-| `npm run build` | `prisma generate` + Nest build |
-| `npm run start:prod` | Run compiled `dist/` |
-| `npm run test` | Unit tests |
-| `npm run lint` | ESLint |
+| Auth | `POST /auth/register`, `/login`, `/verify`, password reset |
+| Learner | `GET /student/quizzes`, start/get attempt, `PUT …/answers`, `POST …/submit` |
+| Admin quizzes | CRUD, publish, invitations, analytics |
+| Admin review | `GET /admin/attempts/:id`, essay grade `PATCH`, `GET …/recent-submissions` |
+| AI | `POST /chat`, `POST /ask`, `POST /admin/ai/generate-questions` |
+| Follow-up | `GET /admin/follow-up` |
+
+Contract details live under `docs/` and `CONTRACT.md`.
 
 ---
 
-### Latest Updates (Analytics Module)
-- Implemented `QuizAnalytics` and `QuestionAnalytics` services and controllers.
-- Backend now automatically calculates metrics like completion rates, scores, and question difficulties.
+## Repository layout
+
+```
+src/
+  auth/                 JWT, verification, password reset
+  modules/
+    admin-quizzes/      Authoring & publish
+    student-quizzes/    Attempts, scoring, essay AI grade
+    question-bank/      Global bank
+    ai-generate/        Draft generation + OCR/PDF
+    ask/                Chat + RAG ask + LLM client
+    integrity/          Events + review
+    admin-follow-up/    Morning follow-up classification
+    invitations/        Cohort invites
+  analytics/            Cohort & question analytics
+  common/               Prisma, mail
+prisma/                 Schema, migrations, seed
+```
+
+---
+
+## Testing & quality
+
+- Jest for scoring, validation, submit/auto-submit races, and follow-up classification.
+- Prefer contract tests over snapshot noise for attempt lifecycle.
+- Lint: `npm run lint`.
+
+---
+
+## Deployment notes
+
+1. Provision Postgres with `CREATE EXTENSION IF NOT EXISTS vector;`
+2. Set production env (`NODE_ENV=production`, strong `JWT_SECRET`, real `FRONTEND_URL`).
+3. `prisma migrate deploy` then `node dist/main` (or container `Dockerfile`).
+4. Run deadline sweeps on **one** replica (`CRON_ENABLED=true` elsewhere `false`).
+5. Rotate any API keys that have appeared in chat logs or tickets.
+
+---
+
+## Related
+
+- Frontend app: sibling `frontend/` repository (Vite + React).
+- Product contracts: `CONTRACT.md`, `docs/ATTEMPTS_SCORING_INTEGRITY_CONTRACT.md`.
