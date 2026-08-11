@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { QuestionsModule } from './modules/questions/questions.module';
+import { QuestionBankModule } from './modules/question-bank/question-bank.module';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { MailModule } from './common/mail/mail.module';
@@ -48,6 +49,7 @@ import { MiddlewareConsumer, NestModule } from '@nestjs/common';
     InvitationsModule,
     AnalyticsModule,
     QuestionsModule,
+    QuestionBankModule,
   ],
   controllers: [HealthController],
   providers: [

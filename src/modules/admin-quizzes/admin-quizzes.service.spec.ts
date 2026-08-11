@@ -52,7 +52,9 @@ function createService() {
   };
 
   return {
-    service: new AdminQuizzesService(prisma as never),
+    service: new AdminQuizzesService(prisma as never, {
+      getActiveBankQuestions: jest.fn(),
+    } as never),
     prisma,
   };
 }
