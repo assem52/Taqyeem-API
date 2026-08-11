@@ -212,16 +212,25 @@ model Chunk {
 }
 
 model Answer {
-  attemptId        String   @db.Uuid
-  attempt          Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  questionId       String   @db.Uuid
-  question         Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  selectedOptionId String?  @db.Uuid
-  textAnswer       String?  @map("text_answer") @db.Text
-  answeredAt       DateTime @default(now()) @map("answered_at")
+  attemptId        String               @db.Uuid
+  attempt          Attempt              @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId       String               @db.Uuid
+  question         Question             @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedOptionId String?              @db.Uuid
+  textAnswer       String?              @map("text_answer") @db.Text
+  awardedPoints    Decimal?             @map("awarded_points") @db.Decimal(7, 2)
+  aiFeedback       String?              @map("ai_feedback") @db.Text
+  gradingStatus    AnswerGradingStatus? @map("grading_status")
+  answeredAt       DateTime             @default(now()) @map("answered_at")
 
   @@id([attemptId, questionId])
   @@index([attemptId])
+}
+
+enum AnswerGradingStatus {
+  UNGRADED
+  AI_GRADED
+  HUMAN_REVIEWED
 }
 
 model IntegrityEvent {
