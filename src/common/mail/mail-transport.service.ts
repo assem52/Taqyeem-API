@@ -27,6 +27,7 @@ export class MailTransportService implements OnModuleInit {
   private readonly logger = new Logger(MailTransportService.name);
   private transporter: Transporter | null = null;
   private mode: MailDeliveryMode = 'simulated';
+  private mode: MailDeliveryMode = 'simulated';
 
   onModuleInit() {
     const host = process.env.SMTP_HOST?.trim();
