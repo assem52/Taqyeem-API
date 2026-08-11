@@ -13,7 +13,7 @@ import * as bcrypt from 'bcrypt';
 const prisma = new PrismaClient();
 
 // Increment when demo seed scenarios change so test/demo runs can identify the exact fixture version.
-const SEED_VERSION = '2026.08.10-l5-v1';
+const SEED_VERSION = '2026.08.11-question-bank-v1';
 const DEMO_STUDENT_EMAIL = 'assem.test@example.com';
 const DEMO_STUDENT_PASSWORD = 'Student123!';
 const DEMO_ADMIN_EMAIL = 'admin@example.com';
@@ -45,9 +45,14 @@ async function main() {
   await prisma.quizOption.deleteMany();
   await prisma.question.deleteMany();
   await prisma.quiz.deleteMany();
+  await prisma.bankQuestionOption.deleteMany();
+  await prisma.bankQuestion.deleteMany();
+  await prisma.questionCategory.deleteMany();
   // Users may FK to Student — clear auth rows before deleting students.
   await prisma.user.deleteMany();
   await prisma.student.deleteMany();
+
+  await seedQuestionBank();
 
   const student = await prisma.student.create({
     data: {
@@ -583,6 +588,188 @@ async function main() {
   console.log(
     'Closed-with-results: assem.test can open Closed Quiz — Results Ready for review + explanations.',
   );
+  console.log(
+    'Question bank: Math, Computer Science, Physics, General Information seeded.',
+  );
+}
+
+type SeedBankOption = { option: string; isCorrect: boolean };
+
+async function seedQuestionBank() {
+  const categories = [
+    { name: 'Math', slug: 'math' },
+    { name: 'Computer Science', slug: 'computer-science' },
+    { name: 'Physics', slug: 'physics' },
+    { name: 'General Information', slug: 'general-information' },
+  ] as const;
+
+  const created = new Map<string, string>();
+  for (const category of categories) {
+    const row = await prisma.questionCategory.create({ data: category });
+    created.set(category.slug, row.id);
+  }
+
+  const bankItems: Array<{
+    categorySlug: string;
+    text: string;
+    type: QuestionType;
+    explanation?: string;
+    options: SeedBankOption[];
+  }> = [
+    {
+      categorySlug: 'math',
+      text: 'What is the value of π rounded to two decimal places?',
+      type: QuestionType.MCQ,
+      explanation: 'π ≈ 3.14159…, so two decimal places is 3.14.',
+      options: [
+        { option: '3.12', isCorrect: false },
+        { option: '3.14', isCorrect: true },
+        { option: '3.16', isCorrect: false },
+        { option: '3.18', isCorrect: false },
+      ],
+    },
+    {
+      categorySlug: 'math',
+      text: 'The derivative of x² with respect to x is 2x.',
+      type: QuestionType.TRUE_FALSE,
+      explanation: 'Power rule: d/dx[xⁿ] = n·xⁿ⁻¹.',
+      options: [
+        { option: 'True', isCorrect: true },
+        { option: 'False', isCorrect: false },
+      ],
+    },
+    {
+      categorySlug: 'math',
+      text: 'Solve for x: 2x + 6 = 14',
+      type: QuestionType.MCQ,
+      options: [
+        { option: '2', isCorrect: false },
+        { option: '4', isCorrect: true },
+        { option: '6', isCorrect: false },
+        { option: '8', isCorrect: false },
+      ],
+    },
+    {
+      categorySlug: 'computer-science',
+      text: 'Which data structure follows FIFO (first in, first out)?',
+      type: QuestionType.MCQ,
+      explanation: 'Queues dequeue the oldest enqueued element.',
+      options: [
+        { option: 'Stack', isCorrect: false },
+        { option: 'Queue', isCorrect: true },
+        { option: 'Binary tree', isCorrect: false },
+        { option: 'Hash set', isCorrect: false },
+      ],
+    },
+    {
+      categorySlug: 'computer-science',
+      text: 'HTTP is a stateful protocol by default.',
+      type: QuestionType.TRUE_FALSE,
+      explanation: 'HTTP is stateless; each request is independent unless cookies/sessions are layered on.',
+      options: [
+        { option: 'True', isCorrect: false },
+        { option: 'False', isCorrect: true },
+      ],
+    },
+    {
+      categorySlug: 'computer-science',
+      text: 'What does Big-O notation describe?',
+      type: QuestionType.MCQ,
+      options: [
+        { option: 'Exact runtime in milliseconds', isCorrect: false },
+        { option: 'Algorithm growth rate as input size grows', isCorrect: true },
+        { option: 'Memory address of a variable', isCorrect: false },
+        { option: 'Number of CPU cores used', isCorrect: false },
+      ],
+    },
+    {
+      categorySlug: 'physics',
+      text: 'What is the SI unit of force?',
+      type: QuestionType.MCQ,
+      explanation: 'Force is measured in newtons (N).',
+      options: [
+        { option: 'Joule', isCorrect: false },
+        { option: 'Watt', isCorrect: false },
+        { option: 'Newton', isCorrect: true },
+        { option: 'Pascal', isCorrect: false },
+      ],
+    },
+    {
+      categorySlug: 'physics',
+      text: 'Light travels faster in a vacuum than in glass.',
+      type: QuestionType.TRUE_FALSE,
+      explanation: 'The speed of light is highest in vacuum; materials slow it down.',
+      options: [
+        { option: 'True', isCorrect: true },
+        { option: 'False', isCorrect: false },
+      ],
+    },
+    {
+      categorySlug: 'physics',
+      text: 'Which quantity is conserved in an isolated system according to the first law of thermodynamics?',
+      type: QuestionType.MCQ,
+      options: [
+        { option: 'Entropy alone', isCorrect: false },
+        { option: 'Energy', isCorrect: true },
+        { option: 'Temperature', isCorrect: false },
+        { option: 'Volume', isCorrect: false },
+      ],
+    },
+    {
+      categorySlug: 'general-information',
+      text: 'Which planet is known as the Red Planet?',
+      type: QuestionType.MCQ,
+      options: [
+        { option: 'Venus', isCorrect: false },
+        { option: 'Mars', isCorrect: true },
+        { option: 'Jupiter', isCorrect: false },
+        { option: 'Mercury', isCorrect: false },
+      ],
+    },
+    {
+      categorySlug: 'general-information',
+      text: 'The United Nations headquarters is located in New York City.',
+      type: QuestionType.TRUE_FALSE,
+      options: [
+        { option: 'True', isCorrect: true },
+        { option: 'False', isCorrect: false },
+      ],
+    },
+    {
+      categorySlug: 'general-information',
+      text: 'How many continents are there on Earth (standard school model)?',
+      type: QuestionType.MCQ,
+      options: [
+        { option: '5', isCorrect: false },
+        { option: '6', isCorrect: false },
+        { option: '7', isCorrect: true },
+        { option: '8', isCorrect: false },
+      ],
+    },
+  ];
+
+  for (const item of bankItems) {
+    const categoryId = created.get(item.categorySlug);
+    if (!categoryId) {
+      throw new Error(`Missing category for slug ${item.categorySlug}`);
+    }
+    await prisma.bankQuestion.create({
+      data: {
+        categoryId,
+        text: item.text,
+        explanation: item.explanation ?? null,
+        type: item.type,
+        points: 1,
+        options: {
+          create: item.options.map((option, position) => ({
+            option: option.option,
+            isCorrect: option.isCorrect,
+            position,
+          })),
+        },
+      },
+    });
+  }
 }
 
 main()
