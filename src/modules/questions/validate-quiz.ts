@@ -56,10 +56,10 @@ export function validateQuestion(
   });
 
   if (question.type === 'OPEN_ENDED') {
-    errors.push(
-      `${label} uses OPEN_ENDED, which is not supported by objective-only scoring`,
-    );
-    return { valid: false, errors };
+    if (options.length > 0) {
+      errors.push(`${label} essay questions must not have options`);
+    }
+    return { valid: errors.length === 0, errors };
   }
 
   if (question.type === 'MCQ') {

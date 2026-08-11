@@ -113,7 +113,7 @@ export class QuestionBankService {
       text: dto.text,
       type: dto.type,
       isHidden: false,
-      options: dto.options,
+      options: dto.options ?? [],
     });
 
     const question = await this.prisma.bankQuestion.create({
@@ -124,7 +124,7 @@ export class QuestionBankService {
         type: dto.type,
         points: dto.points ?? 1,
         options: {
-          create: dto.options.map((option, position) => ({
+          create: (dto.options ?? []).map((option, position) => ({
             option: option.option.trim(),
             isCorrect: option.isCorrect,
             position,
@@ -149,20 +149,23 @@ export class QuestionBankService {
 
     const options =
       dto.options ??
-      existing.options.map((option) => ({
-        option: option.option,
-        isCorrect: option.isCorrect,
-      }));
+      (existing.type === 'OPEN_ENDED' || dto.type === 'OPEN_ENDED'
+        ? []
+        : existing.options.map((option) => ({
+            option: option.option,
+            isCorrect: option.isCorrect,
+          })));
 
     this.assertValidQuestion({
       text: dto.text ?? existing.text,
       type: dto.type ?? existing.type,
       isHidden: false,
-      options,
+      options: options ?? [],
     });
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      if (dto.options !== undefined) {
+      const nextType = dto.type ?? existing.type;
+      if (dto.options !== undefined || nextType === 'OPEN_ENDED') {
         await tx.bankQuestionOption.deleteMany({ where: { questionId } });
       }
       return tx.bankQuestion.update({
@@ -177,15 +180,17 @@ export class QuestionBankService {
           type: dto.type,
           points: dto.points,
           options:
-            dto.options === undefined
+            nextType === 'OPEN_ENDED'
               ? undefined
-              : {
-                  create: dto.options.map((option, position) => ({
-                    option: option.option.trim(),
-                    isCorrect: option.isCorrect,
-                    position,
-                  })),
-                },
+              : dto.options === undefined
+                ? undefined
+                : {
+                    create: dto.options.map((option, position) => ({
+                      option: option.option.trim(),
+                      isCorrect: option.isCorrect,
+                      position,
+                    })),
+                  },
         },
         include: {
           options: { orderBy: [{ position: 'asc' }, { id: 'asc' }] },

@@ -35,10 +35,11 @@ export class CreateQuestionDto {
   @IsEnum(QuestionType)
   type!: QuestionType;
 
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => QuizOptionDto)
-  options!: QuizOptionDto[];
+  options?: QuizOptionDto[];
 
   @IsOptional()
   @IsNumber()
