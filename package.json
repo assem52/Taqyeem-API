@@ -1,10 +1,10 @@
 {
-  "name": "round-2-group-1-qna-service-back-end",
+  "name": "Taqyeem-API",
   "version": "0.0.1",
   "description": "Knowledge Base Q&A Service with RAG - Sprint 1",
   "author": "",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "scripts": {
     "build": "prisma generate && nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
